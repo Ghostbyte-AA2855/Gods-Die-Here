@@ -2,7 +2,7 @@ extends Node3D
 
 signal champion_fell(local: bool)
 
-const Regalia = preload("res://scripts/divine_regalia.gd")
+const ChampionModel = preload("res://scripts/champions/model.gd")
 const EliminationFx = preload("res://scripts/elimination_fx.gd")
 const ArenaStage = preload("res://scripts/arena_stage.gd")
 const CombatFx = preload("res://scripts/combat_fx.gd")
@@ -96,7 +96,10 @@ func set_state(fighters: Array[Dictionary], safe_radius: float, selected_target:
 		piece.visible = alive
 		if facing.length_squared() > 0.01:
 			rig.rotation.y = atan2(-facing.x, -facing.y)
-		_fx.animate_fighter(pawn, fighter, get_process_delta_time() if phase == "active" else 0.0)
+		if alive:
+			if _previous_phase != "active" and phase == "active":
+				pawn.model.reset_motion()
+			pawn.model.watch(fighter, get_process_delta_time() if phase == "active" else 0.0)
 		fill.scale.x = maxf(0.001, health_ratio)
 		fill.position.x = -(1.24 * (1.0 - health_ratio)) / 2.0
 		selection.visible = fighter_id == selected_target
@@ -131,7 +134,16 @@ func set_stage(map_id: String, terrain: Array, zones: Array) -> void:
 
 
 func play_cast(event: Dictionary) -> void:
-	_fx.play_cast(event, _pawns)
+	var source: Dictionary = _pawns.get(event.source_id, {})
+	var presentation := event
+	if not source.is_empty() and source.node.visible:
+		source.model.cast(event.slot)
+		presentation = event.duplicate()
+		var point: Vector3 = source.model.release_point(event.slot)
+		# A dash can move the parent before its cast event reaches the client view.
+		var offset: Vector3 = point - source.node.global_position
+		presentation.hand_origin = Vector3(event.origin.x, 0, event.origin.y) + offset
+	_fx.play_cast(presentation)
 	if event.source_id == 0 and not event.get("affected_ids", []).is_empty() and event.slot != 0:
 		var direction: Vector2 = event.destination - event.origin
 		_impact_axis = Vector3(direction.normalized().x, 0.24, direction.normalized().y)
@@ -172,6 +184,10 @@ func flash_ability(fighter_id: int, slot: int, target_id: int) -> void:
 	if not _pawns.has(fighter_id):
 		return
 	var source: Node3D = _pawns[fighter_id]["node"]
+	if slot == -1:
+		_pawns[fighter_id].model.react("dodge")
+	elif slot == -2:
+		_pawns[fighter_id].model.react("rally")
 	var destination: Vector3 = source.position
 	var class_id: String = _pawns[fighter_id]["class_id"]
 	var kit: Dictionary = ArenaMatch.CLASS_INFO[class_id]
@@ -301,52 +317,11 @@ func _create_pawn(fighter_id: int, class_id: String, team: int, health: float) -
 	var rig := Node3D.new()
 	piece.add_child(rig)
 	var team_color: Color = TEAM_COLORS[team]
-	var class_color: Color = CLASS_COLORS.get(class_id, team_color)
-	var cloth := _material(class_color.darkened(0.63))
-	var accent := _material(class_color, class_color.darkened(0.36))
 	var edge := _material(team_color, team_color.darkened(0.83))
-	var dark := _material(Color("18151c"))
-	var iron := _material(Color("8797a1"))
-	var bronze := _material(Color("c9ad7c"))
-	var cream := _material(Color("f3d0a0"))
-	var eye := _material(Color("eafcff"), team_color, true)
+	var model := ChampionModel.new()
+	rig.add_child(model)
+	model.build(class_id, ArenaMatch.CLASS_INFO[class_id].archetype)
 
-	match class_id:
-		"breakwater":
-			_legs(rig, 0.24, dark)
-			_box(rig, Vector3(0.0, 0.98, 0.0), Vector3(0.78, 0.79, 0.49), cloth)
-			_box(rig, Vector3(0.0, 1.04, -0.262), Vector3(0.24, 0.57, 0.09), edge)
-			for side in [-1.0, 1.0]:
-				_box(rig, Vector3(side * 0.46, 1.13, 0.0), Vector3(0.34, 0.35, 0.46), iron)
-			_cylinder(rig, Vector3(0.0, 1.58, 0.0), 0.31, 0.4, dark, 8)
-			_box(rig, Vector3(0.0, 1.64, -0.277), Vector3(0.34, 0.068, 0.09), eye)
-			_box(rig, Vector3(-0.49, 0.84, -0.36), Vector3(0.51, 0.85, 0.17), bronze)
-			_box(rig, Vector3(-0.49, 0.86, -0.47), Vector3(0.38, 0.69, 0.1), cloth)
-			_box(rig, Vector3(-0.49, 0.86, -0.53), Vector3(0.077, 0.42, 0.04), edge)
-			_box(rig, Vector3(0.57, 0.77, -0.26), Vector3(0.1, 0.8, 0.115), iron).rotate_z(-0.27)
-		"threadkeeper":
-			_cone(rig, Vector3(0.0, 0.54, 0.0), 0.26, 0.48, 0.92, cloth, 8)
-			_cone(rig, Vector3(0.0, 1.11, 0.0), 0.28, 0.27, 0.55, cloth, 8)
-			_box(rig, Vector3(0.0, 0.86, 0.0), Vector3(0.61, 0.09, 0.53), bronze)
-			_cylinder(rig, Vector3(0.0, 1.61, 0.0), 0.258, 0.46, dark, 8)
-			_sphere(rig, Vector3(0.0, 1.57, -0.143), 0.155, cream)
-			_box(rig, Vector3(0.55, 0.97, -0.12), Vector3(0.087, 1.57, 0.085), bronze)
-			_sphere(rig, Vector3(0.55, 1.82, -0.12), 0.16, eye)
-		"echo_duelist":
-			_legs(rig, 0.18, dark)
-			_cone(rig, Vector3(0.0, 1.0, 0.0), 0.32, 0.22, 0.71, cloth, 8)
-			_box(rig, Vector3(0.0, 0.84, 0.01), Vector3(0.53, 0.1, 0.49), bronze)
-			_sphere(rig, Vector3(0.0, 1.53, 0.0), 0.25, dark)
-			_box(rig, Vector3(0.0, 1.58, -0.218), Vector3(0.29, 0.056, 0.09), eye)
-			_box(rig, Vector3(-0.24, 1.15, 0.18), Vector3(0.12, 0.49, 0.12), edge).rotate_x(0.53)
-			for side in [-1.0, 1.0]:
-				_box(rig, Vector3(side * 0.35, 0.98, 0.0), Vector3(0.22, 0.36, 0.24), cloth)
-				_box(rig, Vector3(side * 0.53, 0.82, -0.21), Vector3(0.09, 0.61, 0.094), iron).rotate_z(side * -0.47)
-
-		_:
-			_build_class_figure(rig, class_id, cloth, accent, dark, iron, bronze, edge)
-
-	Regalia.dress(self, rig, class_id)
 	_ring(piece, Vector3.UP * 0.045, 0.52, 0.57, edge)
 	if fighter_id == 0:
 		var local_indicator := _material(Color("f4e6cd"), Color("c6ccb5"), true)
@@ -375,92 +350,10 @@ func _create_pawn(fighter_id: int, class_id: String, team: int, health: float) -
 	_quad(piece, Vector3(0.0, 2.05, 0.0), Vector2(1.32, 0.12), bar_back)
 	var fill := _quad(piece, Vector3(0.0, 2.05, 0.007), Vector2(1.24, 0.063), bar_fill)
 	return {
-		"node": piece, "rig": rig, "fill": fill, "selection": selection, "health": health,
+		"node": piece, "rig": rig, "model": model, "fill": fill, "selection": selection, "health": health,
 		"class_id": class_id, "trail": trail, "guard_link": guard_link, "brace": brace,
 		"wound": wound, "mending": mend, "status_label": status_label,
 	}
-
-
-func _build_class_figure(rig: Node3D, class_id: String, cloth: Material, accent: Material,
-		dark: Material, iron: Material, bronze: Material, trim: Material) -> void:
-	var archetype: String = ArenaMatch.CLASS_INFO[class_id].archetype
-	match archetype:
-		"guard":
-			_legs(rig, 0.26, dark)
-			_box(rig, Vector3(0, 0.99, 0), Vector3(0.85, 0.83, 0.5), cloth)
-			for side in [-1, 1]:
-				_box(rig, Vector3(side * 0.46, 1.25, 0), Vector3(0.33, 0.29, 0.46), iron)
-		"healer", "ranged":
-			_cone(rig, Vector3(0, 0.54, 0), 0.25, 0.47, 0.96, cloth, 8)
-			_cone(rig, Vector3(0, 1.11, 0), 0.31, 0.24, 0.58, cloth, 8)
-		_:
-			_legs(rig, 0.2, dark)
-			_cone(rig, Vector3(0, 0.99, 0), 0.34, 0.23, 0.76, cloth, 8)
-	_sphere(rig, Vector3(0, 1.55, 0), 0.25, dark)
-	_box(rig, Vector3(0, 1.57, -0.217), Vector3(0.3, 0.055, 0.09), trim)
-	_box(rig, Vector3(0, 0.82, 0), Vector3(0.59, 0.1, 0.53), bronze)
-	match class_id:
-		"forgecaller":
-			_box(rig, Vector3(0.55, 0.93, 0), Vector3(0.12, 1.02, 0.13), bronze).rotate_z(-0.25)
-			_box(rig, Vector3(0.67, 1.39, 0), Vector3(0.57, 0.36, 0.33), iron)
-			_box(rig, Vector3(0.67, 1.39, -0.18), Vector3(0.42, 0.12, 0.05), accent)
-		"lamplighter":
-			_box(rig, Vector3(0.53, 1.0, 0), Vector3(0.08, 1.7, 0.09), bronze)
-			_box(rig, Vector3(0.69, 1.8, 0), Vector3(0.4, 0.07, 0.08), bronze)
-			_cone(rig, Vector3(0.86, 1.56, 0), 0.14, 0.2, 0.27, accent, 4)
-			_cone(rig, Vector3(0.86, 1.75, 0), 0.07, 0.19, 0.13, bronze, 4)
-		"longwatch":
-			_box(rig, Vector3(0.53, 1.25, -0.26), Vector3(0.09, 0.66, 0.08), bronze).rotate_x(0.53)
-			_box(rig, Vector3(0.53, 0.70, -0.26), Vector3(0.09, 0.66, 0.08), bronze).rotate_x(-0.53)
-			_box(rig, Vector3(0.53, 0.98, -0.12), Vector3(0.025, 1.08, 0.025), trim)
-			_cone(rig, Vector3(0, 1.83, 0.03), 0.02, 0.31, 0.2, cloth, 6)
-		"sluicecaller":
-			_box(rig, Vector3(0.54, 1.0, 0), Vector3(0.08, 1.65, 0.08), iron)
-			_box(rig, Vector3(0.54, 1.64, 0), Vector3(0.54, 0.1, 0.09), bronze)
-			for prong in [-1, 0, 1]:
-				_cone(rig, Vector3(0.54 + prong * 0.22, 1.83, 0), 0.0, 0.09, 0.38, accent, 4)
-		"glassmage":
-			for shard in [Vector3(-0.46, 1.35, 0), Vector3(0.5, 1.6, 0), Vector3(0.22, 2.02, 0.03)]:
-				_cone(rig, shard, 0, 0.17, 0.38, accent, 4)
-				_cone(rig, shard + Vector3.DOWN * 0.28, 0.17, 0, 0.18, accent, 4)
-		"blood_cantor":
-			for side in [-1, 1]:
-				_cone(rig, Vector3(side * 0.22, 1.82, 0), 0, 0.1, 0.45, bronze, 6).rotate_z(-side * 0.43)
-			_cone(rig, Vector3(0.5, 1.11, -0.13), 0.21, 0.08, 0.28, accent, 6)
-			_cylinder(rig, Vector3(0.5, 0.88, -0.13), 0.06, 0.3, bronze, 6)
-		"bellwarden":
-			_cylinder(rig, Vector3(0.67, 1.27, -0.17), 0.065, 0.25, iron, 8)
-			_cone(rig, Vector3(0.67, 0.93, -0.17), 0.16, 0.38, 0.5, bronze, 10)
-			_sphere(rig, Vector3(0.67, 0.63, -0.17), 0.12, iron)
-		"ash_dancer":
-			for side in [-1, 1]:
-				_cone(rig, Vector3(side * 0.54, 0.96, -0.1), 0.02, 0.14, 0.83, accent, 4).rotate_z(-side * 0.72)
-				_cone(rig, Vector3(side * 0.18, 1.86, 0.09), 0.0, 0.10, 0.35, accent, 4)
-		"winter_scribe":
-			for side in [-1, 1]:
-				_box(rig, Vector3(side * 0.15, 1.05, -0.48), Vector3(0.32, 0.43, 0.075), accent).rotate_y(side * 0.47)
-			_cone(rig, Vector3(0.43, 1.31, -0.23), 0.015, 0.055, 0.56, iron, 5).rotate_z(-0.46)
-		"dream_shepherd":
-			_box(rig, Vector3(0.55, 0.99, -0.04), Vector3(0.08, 1.76, 0.09), bronze)
-			_ring(rig, Vector3(0.73, 1.86, -0.04), 0.12, 0.24, accent).rotate_x(PI * 0.5)
-			for side in [-1, 1]:
-				_sphere(rig, Vector3(side * 0.25, 1.29, 0.03), 0.19, accent)
-		"chainrunner":
-			for link in range(5):
-				var angle := PI * float(link) / 5.0
-				_ring(rig, Vector3(0.4 + link * 0.12, 1.02 - sin(angle) * 0.19, -0.13),
-					0.055, 0.09, iron).rotate_x(1.0 if link % 2 == 0 else 0.3)
-			_sphere(rig, Vector3(1.01, 0.95, -0.13), 0.2, accent)
-		"coilwright":
-			for side in [-1, 1]:
-				_cylinder(rig, Vector3(side * 0.37, 1.44, 0.18), 0.055, 0.72, iron, 6)
-				for coil in range(3):
-					_ring(rig, Vector3(side * 0.37, 1.34 + coil * 0.16, 0.18), 0.075, 0.15, bronze)
-				_sphere(rig, Vector3(side * 0.37, 1.88, 0.18), 0.11, accent)
-		"duskmoth":
-			for side in [-1, 1]:
-				_box(rig, Vector3(side * 0.48, 1.24, 0.16), Vector3(0.36, 0.84, 0.07), accent).rotate_z(-side * 0.67)
-				_box(rig, Vector3(side * 0.37, 0.83, 0.18), Vector3(0.28, 0.44, 0.07), cloth).rotate_z(side * 0.7)
 
 
 func _float_amount(point: Vector3, amount: int, color: Color) -> void:
@@ -473,12 +366,6 @@ func _float_amount(point: Vector3, amount: int, color: Color) -> void:
 	tween.tween_property(label, "modulate:a", 0.0, 0.56)
 	tween.tween_property(label, "outline_modulate:a", 0.0, 0.56)
 	tween.chain().tween_callback(label.queue_free)
-
-
-func _legs(rig: Node3D, spread: float, material: Material) -> void:
-	for side in [-1.0, 1.0]:
-		_box(rig, Vector3(side * spread, 0.29, 0.0), Vector3(0.25, 0.52, 0.24), material)
-		_box(rig, Vector3(side * spread, 0.094, -0.09), Vector3(0.29, 0.17, 0.42), material)
 
 
 func _label(parent: Node3D, point: Vector3, caption: String, color: Color, pixels: float) -> Label3D:
@@ -517,28 +404,6 @@ func _quad(parent: Node3D, point: Vector3, size: Vector2, material: Material) ->
 func _box(parent: Node3D, point: Vector3, size: Vector3, material: Material) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
 	mesh.size = size
-	return _add_mesh(parent, point, mesh, material)
-
-
-func _cylinder(parent: Node3D, point: Vector3, radius: float, height: float, material: Material, segments: int) -> MeshInstance3D:
-	return _cone(parent, point, radius, radius, height, material, segments)
-
-
-func _cone(parent: Node3D, point: Vector3, top: float, bottom: float, height: float, material: Material, segments: int) -> MeshInstance3D:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = top
-	mesh.bottom_radius = bottom
-	mesh.height = height
-	mesh.radial_segments = segments
-	return _add_mesh(parent, point, mesh, material)
-
-
-func _sphere(parent: Node3D, point: Vector3, radius: float, material: Material) -> MeshInstance3D:
-	var mesh := SphereMesh.new()
-	mesh.radius = radius
-	mesh.height = radius * 2.0
-	mesh.radial_segments = 12
-	mesh.rings = 5
 	return _add_mesh(parent, point, mesh, material)
 
 

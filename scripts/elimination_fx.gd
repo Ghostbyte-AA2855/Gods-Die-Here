@@ -20,12 +20,11 @@ func play(pawn: Dictionary, at: Vector3, facing: Vector2, full_detail: bool) -> 
 	var heading := Vector3(facing.x, 0.0, facing.y)
 	if heading.length_squared() < 0.1:
 		heading = Vector3.FORWARD
-	var axis := Vector3.UP.cross(heading).normalized()
-	var rest := fallen.basis
-	var flip := fallen.create_tween().set_parallel()
-	flip.tween_method(func(t: float): fallen.basis = Basis(axis, -1.45 * t) * rest,
-		0.0, 1.0, 0.41).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	flip.tween_property(fallen, "position", -heading * 0.48 + Vector3.UP * 0.30, 0.41)
+	var player := fallen.get_node("ChampionRig/Motion") as AnimationPlayer
+	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
+	player.speed_scale = 1.0
+	player.play("death", 0.065)
+	player.advance(0.0)
 	if full_detail:
 		_burst(scene, heading)
 	scene.create_tween().tween_interval(3.6).finished.connect(scene.queue_free)

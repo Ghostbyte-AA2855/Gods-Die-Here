@@ -34,7 +34,17 @@ The [arena guide](docs/arenas.md) explains the five environmental mechanics, the
 
 Each champion has a name, a patron, a personal curse, and an armor silhouette shaped by their god. See the [pantheon](docs/pantheon.md) for the full cast. The class panel shows the patron and champion alongside the eight combat abilities.
 
-The playable art pass uses articulated procedural 3D models. Attacks have spell effects, cast movement and sound accents. Defeated fighters collapse onto the floor, with optional blood spray and pooling. The prototype still needs production character sculpting, authored animation and six-human balance testing.
+Each champion has their own articulated 3D armor, weapons, and regalia. The lobby displays the same model used in the arena. Pick a spell to preview its full casting animation, and drag the model to inspect it from another angle.
+
+The game includes 128 ability-specific cast clips and 11 movement and reaction clips per champion. The rig carries the weapons, limbs, mantle, and ornaments. Bolts and tethers begin at the casting hand. Defeated fighters play their own fall with optional blood spray and pooling. This pass uses modeled geometry and materials with rigid joint bindings. Detailed surface textures, facial animation, and live six-human playtesting remain future work.
+
+## Export champion models
+
+The source models and animation curves live in `scripts/champions`. To export a GLB for each champion, including all animation actions, run this command with an absolute output directory.
+
+```sh
+godot --headless --path . --script res://tools/preview/export_champions.gd -- /absolute/path/to/champions --animated
+```
 
 ## Development
 
@@ -45,4 +55,5 @@ Run the combat and scene checks from the repository directory.
 ```sh
 godot --headless --path . --script res://tests/arena_match_test.gd
 godot --headless --path . --script res://tests/arena_scene_test.gd
+godot --headless --path . --script res://tests/champion_art_test.gd
 ```

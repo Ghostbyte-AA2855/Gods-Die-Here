@@ -24,20 +24,14 @@ const TEAM_ACCENTS = [Color("74f4ef"), Color("ff9070")]
 const MAX_TRANSIENTS := 42
 
 
-func play_cast(event: Dictionary, pawns: Dictionary) -> void:
+func play_cast(event: Dictionary) -> void:
 	var slot: int = event.slot
 	var style: Array = STYLES.get(event.class_id, [])
 	if slot < 0 or slot >= 8 or style.is_empty():
 		return
 	var motif: String = style[1]
 	var pattern: String = style[2][slot]
-	var caster: Dictionary = pawns.get(event.source_id, {})
 	var strong := slot == 7
-	if not caster.is_empty():
-		caster["fx_action"] = pattern
-		caster["fx_action_left"] = 0.42 if strong else 0.30
-		caster["fx_action_duration"] = caster.fx_action_left
-		caster["fx_hand"] = -float(caster.get("fx_hand", -1.0))
 	# Six bots can trade abilities in a single frame. Keep the newest significant
 	# actions readable while earlier flourishes complete at their natural rate.
 	if get_child_count() >= MAX_TRANSIENTS:
@@ -63,6 +57,7 @@ func play_cast(event: Dictionary, pawns: Dictionary) -> void:
 	direction.y = 0
 	direction = direction.normalized()
 	var chest := Vector3.UP * 0.91
+	var hand: Vector3 = event.get("hand_origin", origin + chest)
 	var strength := 1.36 if strong else 1.0
 	var duration := 0.52 if strong else 0.36
 	match pattern:
@@ -83,9 +78,9 @@ func play_cast(event: Dictionary, pawns: Dictionary) -> void:
 			var shots := 3 if pattern == "volley" else 1
 			for n in shots:
 				var spread := direction.cross(Vector3.UP) * (n - (shots - 1) * 0.5) * 0.48
-				_projectile(cast, origin + chest, destination + chest + spread, direction, motif, pattern, strength, ink)
+				_projectile(cast, hand, destination + chest + spread, direction, motif, pattern, strength, ink)
 		"zap", "chain", "thread":
-			_tether(cast, origin + chest, destination + chest, pattern, motif, strength, ink)
+			_tether(cast, hand, destination + chest, pattern, motif, strength, ink)
 			if event.class_id == "coilwright" and slot == 2:
 				for fighter_id in event.get("affected_positions", {}):
 					if fighter_id != event.target_id:
@@ -104,7 +99,7 @@ func play_cast(event: Dictionary, pawns: Dictionary) -> void:
 			_ward(cast, destination, motif, strength, ink)
 		"heal", "cleanse", "rally":
 			if pattern == "heal" and origin.distance_squared_to(destination) > 0.15:
-				_tether(cast, origin + chest, destination + chest, "thread", motif, 0.72, ink)
+				_tether(cast, hand, destination + chest, "thread", motif, 0.72, ink)
 			var healing := Node3D.new()
 			cast.add_child(healing)
 			healing.position = destination
@@ -285,103 +280,3 @@ func _ink(color: Color, alpha: float) -> StandardMaterial3D:
 
 func _floor_point(plane: Vector2) -> Vector3:
 	return Vector3(plane.x, 0.0, plane.y)
-
-
-func animate_fighter(pawn: Dictionary, fighter: Dictionary, delta: float) -> void:
-	var rig: Node3D = pawn.rig
-	var at: Vector2 = fighter.position
-	var health: float = fighter.health
-	if not pawn.has("fx_parts"):
-		_bind_pose(pawn, at, health)
-	var previous: Vector2 = pawn.fx_position
-	var travel := at.distance_to(previous)
-	var dt := clampf(delta, 0.0, 0.1)
-	pawn.fx_position = at
-	if not fighter.alive:
-		pawn.fx_action_left = 0.0
-		pawn.fx_health = health
-		return
-	var speed := clampf(travel / maxf(0.001, dt), 0.0, 6.0) if travel < 2.5 else 0.0
-	var class_id: String = fighter.class_id
-	var is_heavy := class_id in ["breakwater", "forgecaller", "bellwarden"]
-	var is_light := class_id in ["chainrunner", "ash_dancer", "duskmoth", "echo_duelist"]
-	var gait: float = lerpf(pawn.fx_gait, speed / 6.0, minf(1.0, dt * 13.0))
-	pawn.fx_gait = gait
-	pawn.fx_phase += dt * (3.3 + gait * (10.5 if is_light else 7.6))
-	var stride := sin(float(pawn.fx_phase))
-	var breathe := sin(float(pawn.fx_phase) * 0.58)
-	var lost := float(pawn.fx_health) - health
-	pawn.fx_health = health
-	if lost > 1.0:
-		pawn.fx_flinch = minf(1.0, 0.3 + lost / 36.0)
-	pawn.fx_flinch = maxf(0.0, float(pawn.fx_flinch) - dt * 4.6)
-	pawn.fx_action_left = maxf(0.0, float(pawn.fx_action_left) - dt)
-	var t := 1.0 - float(pawn.fx_action_left) / maxf(0.01, float(pawn.fx_action_duration))
-	var strike := sin(PI * t) if t < 1.0 else 0.0
-	var side: float = pawn.fx_hand
-	var move_pitch := -gait * (0.09 if is_heavy else 0.15)
-	var twist := 0.0
-	var arm_swing := 0.16 + 0.28 * gait * stride
-	var action: String = pawn.get("fx_action", "")
-	var lift := 0.0
-	match action:
-		"cut", "crush", "sweep", "chain":
-			move_pitch -= strike * 0.26
-			twist = side * strike * 0.21
-			arm_swing -= strike * (1.12 if action == "crush" else 0.89)
-		"ward", "brand", "field":
-			move_pitch += strike * 0.13
-			arm_swing -= strike * 0.68
-			lift = -strike * 0.055
-		"rally", "cleanse", "heal", "thread", "burst":
-			arm_swing -= strike * 1.04
-			lift = strike * 0.09
-		"dash":
-			move_pitch -= strike * 0.35
-			twist = side * strike * 0.12
-			lift = strike * 0.10
-		_:
-			move_pitch += strike * 0.16
-			arm_swing -= strike * 0.82
-	if fighter.get("mend_time", 0.0) > 0.0:
-		arm_swing = -0.8
-	var flinch: float = pawn.fx_flinch
-	rig.position.y = (absf(stride) * gait * (0.065 if is_heavy else 0.105)) + breathe * 0.013 + lift
-	rig.rotation.x = move_pitch + flinch * 0.19
-	rig.rotation.z = gait * stride * 0.045 + twist + side * flinch * 0.09
-	for part: Dictionary in pawn.fx_parts:
-		var angle: float
-		if part.kind == "hand":
-			angle = arm_swing + sin(float(pawn.fx_phase) * 0.58) * 0.035
-		else:
-			angle = stride * gait * float(part.side) * (0.35 if is_heavy else 0.55)
-		var spin := Basis(Vector3.RIGHT, angle)
-		var joint: Vector3 = part.pivot
-		var body_part: Node3D = part.node
-		# Rotate the whole limb around a joint in rig space, preserving the
-		# original geometry and all authored class equipment orientations.
-		body_part.transform = Transform3D(spin, joint - spin * joint) * (part.rest as Transform3D)
-
-
-func _bind_pose(pawn: Dictionary, at: Vector2, health: float) -> void:
-	var rig: Node3D = pawn.rig
-	var parts: Array[Dictionary] = []
-	for child in rig.get_children():
-		if not child is MeshInstance3D or child == pawn.get("brace"):
-			continue
-		var p: Vector3 = child.position
-		var sign_x := 1.0 if p.x >= 0.0 else -1.0
-		if p.y < 0.58 and absf(p.x) > 0.12 and absf(p.x) < 0.34:
-			parts.append({"node": child, "rest": child.transform, "kind": "leg", "side": sign_x, "pivot": Vector3(p.x, 0.55, 0.0)})
-		elif p.x > 0.40 and p.z < 0.14 and p.y > 0.50:
-			parts.append({"node": child, "rest": child.transform, "kind": "hand", "side": 1.0, "pivot": Vector3(0.35, 1.22, 0.0)})
-	pawn["fx_parts"] = parts
-	pawn["fx_gait"] = 0.0
-	pawn["fx_phase"] = absf(at.x + at.y) * 0.35
-	pawn["fx_position"] = at
-	pawn["fx_health"] = health
-	pawn["fx_flinch"] = 0.0
-	if not pawn.has("fx_action_left"):
-		pawn["fx_action_left"] = 0.0
-		pawn["fx_action_duration"] = 1.0
-		pawn["fx_hand"] = 1.0

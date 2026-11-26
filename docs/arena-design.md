@@ -29,7 +29,7 @@ Characters carry class-specific equipment, and their team color appears on the b
 
 Cast and impact poses, walking motion, spell trails and short sound cues come from match events. Bots and players use the same presentation. A rejected cast leaves the battlefield clear. A placed field stays visible for its simulated lifetime, while short cast flourishes fade. Map warnings use floor patterns, text, and a separate sound cue. Press M to toggle sound.
 
-The current art is a stylized, low-poly prototype with procedural animation. A human playtest should check whether a player can identify the spell, its target and the safe exit in a six-fighter exchange at normal speed.
+The current art uses individual articulated models and authored pose curves. Character parts follow a joint hierarchy with separate motion for weapons, mantles, and ornaments. A human playtest should check whether a player can identify the spell, its target and the safe exit in a six-fighter exchange at normal speed.
 
 ## Ranked design proposal
 

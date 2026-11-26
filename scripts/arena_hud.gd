@@ -4,6 +4,7 @@ signal class_chosen(class_id: String)
 signal advance_pressed
 signal lobby_pressed
 
+const LobbyPreview = preload("res://scripts/champions/lobby_preview.gd")
 const Pantheon = preload("res://scripts/pantheon.gd")
 const ArenaMatch = preload("res://scripts/arena_match.gd")
 const ArenaMaps = preload("res://scripts/arena_maps.gd")
@@ -29,6 +30,9 @@ var feed_label: Label
 var ability_buttons: Array[Button] = []
 var roster_buttons: Dictionary = {}
 var preview_class: String = "breakwater"
+var champion_preview: SubViewportContainer
+var animation_picker: OptionButton
+var animation_replay: Button
 var class_name_label: Label
 var role_label: Label
 var selected_mastery: int = -1
@@ -83,10 +87,10 @@ func _build_lobby() -> void:
 
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 22)
+	body.add_theme_constant_override("separation", 16)
 	page.add_child(body)
 	var roster := _column(body, 8)
-	roster.custom_minimum_size.x = 324
+	roster.custom_minimum_size.x = 302
 	roster.add_child(_label("Choose your class", 20, GOLD))
 	var roster_scroll := _scroll(roster)
 	var grid := GridContainer.new()
@@ -127,6 +131,7 @@ func _build_lobby() -> void:
 	kit_scroll = _scroll(details)
 	kit_list = _column(kit_scroll, 7)
 	kit_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_build_model_preview(body)
 	page.add_child(HSeparator.new())
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 16)
@@ -142,6 +147,49 @@ func _build_lobby() -> void:
 	_preview(preview_class)
 
 
+
+func _build_model_preview(body: HBoxContainer) -> void:
+	var column := _column(body, 6)
+	column.custom_minimum_size.x = 295
+	column.add_child(_label("Champion preview", 18, GOLD))
+	champion_preview = LobbyPreview.new()
+	column.add_child(champion_preview)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	column.add_child(row)
+	animation_picker = _selector()
+	animation_picker.accessibility_name = "Preview an ability animation"
+	animation_picker.fit_to_longest_item = false
+	animation_picker.clip_text = true
+	animation_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	animation_picker.item_selected.connect(_animate_preview)
+	row.add_child(animation_picker)
+	animation_replay = _button("Replay")
+	animation_replay.focus_mode = Control.FOCUS_ALL
+	animation_replay.disabled = true
+	animation_replay.pressed.connect(func(): _animate_preview(animation_picker.selected))
+	row.add_child(animation_replay)
+	column.add_child(_wrapped_label("Drag to rotate · Use ← or → when focused", 13, MUTED))
+
+
+func _animate_preview(index: int) -> void:
+	animation_replay.disabled = index <= 0
+	if index <= 0:
+		champion_preview.idle()
+	else:
+		champion_preview.play_ability(index - 1)
+
+
+func _refresh_model_preview(kit: Dictionary) -> void:
+	champion_preview.show_champion(preview_class, kit.archetype)
+	animation_picker.clear()
+	animation_picker.add_item("Preview an ability")
+	for ability: Dictionary in kit.abilities:
+		animation_picker.add_item(ability.name)
+	animation_picker.select(0)
+	_animate_preview(0)
+
+
 func _map_changed(index: int) -> void:
 	selected_map = str(map_picker.get_item_metadata(index))
 	map_description.text = ArenaMaps.MAPS[selected_map].description
@@ -153,6 +201,7 @@ func _preview(class_id: String) -> void:
 	preview_class = class_id
 	var kit: Dictionary = ArenaMatch.CLASS_INFO[class_id]
 	roster_buttons[class_id].set_pressed_no_signal(true)
+	_refresh_model_preview(kit)
 	class_name_label.text = kit.name
 	role_label.text = "%s  /  %s" % [kit.role, kit.resource]
 	mastery_picker.clear()
@@ -290,6 +339,7 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 		return
 	var has_game: bool = game.phase != "idle"
 	lobby.visible = not has_game
+	champion_preview.set_active(not has_game)
 	scoreboard.visible = has_game
 	feed_label.visible = has_game
 	combat_bar.visible = game.phase == "active" and not quit_prompt
