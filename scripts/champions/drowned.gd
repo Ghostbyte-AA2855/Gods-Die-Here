@@ -226,12 +226,13 @@ static func _echo_duelist(m) -> void:
 
 
 static func _forgecaller(m) -> void:
-	var slag := "m:353035"
+	var slag := "m:383640"
 	var char := "262228"
-	var nickel := "m:6c6262"
-	var brass := "m:93634d"
+	var nickel := "m:7e7d88"
+	var brass := "m:9d6849"
+	var trim := "m:c88e5f"
 	var crust := "672d20"
-	var molten := "e:ff7d36"
+	var molten := "e:ff923f"
 
 	# Korr wears a full black foundry harness, wideset and armoured on
 	# every side. A custom faceted firebox breaks the heavy torso open.
@@ -247,6 +248,8 @@ static func _forgecaller(m) -> void:
 	for side in [-1.0, 1.0]:
 		var s := _side(side)
 		_bar(m, "spine", Vector3(side * 0.19, 1.127, -0.425), Vector3(side * 0.337, 0.965, -0.317), 0.093, 0.067, brass)
+		_line(m, "spine", Vector3(side * 0.245, 1.282, -0.437), Vector3(side * 0.262, 1.161, -0.435), 0.017, 0.013, trim)
+		_line(m, "spine", Vector3(side * 0.262, 1.161, -0.435), Vector3(side * 0.098, 1.028, -0.452), 0.013, 0.011, trim)
 		for ind in range(5):
 			_rivet(m, "spine", Vector3(side * (0.201 + sin(ind * 0.44) * 0.057), 1.073 + ind * 0.081, -0.441), 0.021, nickel)
 		var upper_index := "upper_" + s
@@ -255,6 +258,7 @@ static func _forgecaller(m) -> void:
 		_shell(m, upper_index, side * 0.507, [Vector4(1.192, 0.179, 0.012, 0.181), Vector4(1.338, 0.234, 0.021, 0.243), Vector4(1.485, 0.202, 0.034, 0.188), Vector4(1.596, 0.125, 0.029, 0.141)], slag, nickel)
 		for i in range(3):
 			_bevel(m, upper_index, Vector3(side * (0.459 + 0.073 * i), 1.496 - i * 0.089, -0.206 + i * 0.015), [Vector2(-0.114, 0.074), Vector2(-0.07, 0.109), Vector2(0.147, 0.08), Vector2(0.124, -0.107), Vector2(-0.136, -0.054)], 0.096 - i * 0.014, brass, slag)
+			_rivet(m, upper_index, Vector3(side * (0.469 + 0.073 * i), 1.552 - i * 0.089, -0.259 + i * 0.020), 0.018, trim)
 		_line(m, upper_index, Vector3(side * 0.609, 1.488, 0.006), Vector3(side * 0.685, 1.692, 0.106), 0.097, 0.023, nickel)
 		_shell(m, fore_index, side * 0.563, [Vector4(0.851, 0.123, -0.004, 0.131), Vector4(1.013, 0.16, -0.013, 0.157), Vector4(1.158, 0.135, 0.035, 0.139)], slag, nickel)
 		for i in range(3):
@@ -269,6 +273,7 @@ static func _forgecaller(m) -> void:
 	_face(m, "head", Vector3(0, 1.754, -0.199), [Vector2(-0.126, 0.027), Vector2(0, 0.009), Vector2(0.119, 0.028), Vector2(0.111, -0.025), Vector2(0, -0.038), Vector2(-0.116, -0.025)], 0.022, char)
 	for side in [-1.0, 1.0]:
 		_line(m, "head", Vector3(side * 0.103, 1.756, -0.221), Vector3(side * 0.022, 1.748, -0.223), 0.009, 0.006, molten)
+		_line(m, "head", Vector3(side * 0.125, 1.787, -0.211), Vector3(side * 0.018, 1.763, -0.240), 0.015, 0.012, trim)
 		_bar(m, "head", Vector3(side * 0.046, 1.599, -0.200), Vector3(side * 0.13, 1.649, -0.199), 0.019, 0.022, brass)
 		_line(m, "head", Vector3(side * 0.136, 1.628, -0.173), Vector3(side * 0.186, 1.616, 0.108), 0.054, 0.073, slag)
 
@@ -280,8 +285,9 @@ static func _forgecaller(m) -> void:
 		var mouth := Vector3(x * 1.16, height, 0.43 - i * 0.027)
 		m.tube("ornament", bottom, mouth, 0.091, 0.067, slag, 6)
 		m.tube("ornament", mouth + Vector3.DOWN * 0.068, mouth + Vector3.DOWN * 0.023, 0.078, 0.088, brass, 6)
-		m.tube("ornament", mouth + Vector3.DOWN * 0.024, mouth + Vector3.UP * 0.006, 0.064, 0.062, char, 7)
-		m.tube("ornament", mouth + Vector3.UP * 0.006, mouth + Vector3.UP * 0.008, 0.043, 0.043, crust if i % 2 else molten, 7)
+		m.tube("ornament", mouth + Vector3.DOWN * 0.022, mouth + Vector3.UP * 0.008, 0.088, 0.079, trim, 6)
+		m.tube("ornament", mouth + Vector3.UP * 0.008, mouth + Vector3.UP * 0.011, 0.062, 0.062, char, 6)
+		m.tube("ornament", mouth + Vector3.UP * 0.011, mouth + Vector3.UP * 0.014, 0.044, 0.044, molten, 6)
 		for j in range(2):
 			_rivet(m, "ornament", mouth + Vector3(0.045 * (j * 2 - 1), -0.09, 0.066), 0.011, nickel)
 
@@ -294,7 +300,11 @@ static func _forgecaller(m) -> void:
 	_bevel(m, "hand_r", hammer, [Vector2(-0.32, -0.16), Vector2(-0.283, 0.121), Vector2(-0.174, 0.192), Vector2(0.168, 0.153), Vector2(0.277, 0.08), Vector2(0.29, -0.153), Vector2(0.167, -0.196), Vector2(-0.229, -0.188)], 0.285, nickel, slag)
 	for x in [-0.242, -0.13, 0.106, 0.209]:
 		_bar(m, "hand_r", hammer + Vector3(x, -0.118, -0.211), hammer + Vector3(x - 0.017, 0.121, -0.195), 0.038, 0.041, brass)
+		_rivet(m, "hand_r", hammer + Vector3(x - 0.011, 0.094, -0.222), 0.015, trim)
 	_line(m, "hand_r", hammer + Vector3(-0.221, 0.053, -0.236), hammer + Vector3(0.206, -0.078, -0.224), 0.015, 0.026, molten)
+	for side in [-1.0, 1.0]:
+		_bevel(m, "hand_r", hammer + Vector3(side * 0.257, 0, -0.202), _pointed(0.118, 0.32), 0.062, trim, slag)
+		_line(m, "hand_r", hammer + Vector3(side * 0.162, 0.142, -0.168), hammer + Vector3(side * 0.245, 0.091, -0.203), 0.014, 0.019, trim)
 
 
 static func _side(side: float) -> String:

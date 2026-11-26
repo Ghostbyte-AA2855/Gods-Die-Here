@@ -7,7 +7,9 @@ signal pause_pressed
 
 const ArenaMatch = preload("res://scripts/arena_match.gd")
 const ArenaMaps = preload("res://scripts/arena_maps.gd")
+const ArenaStage = preload("res://scripts/arena_stage.gd")
 const LobbyPreview = preload("res://scripts/champions/lobby_preview.gd")
+const BattleGuides = preload("res://scripts/mobile_battle_guides.gd")
 const MobileKits = preload("res://scripts/mobile_kits.gd")
 const Pantheon = preload("res://scripts/pantheon.gd")
 
@@ -21,14 +23,8 @@ const GOLD := Color("#e8be7d")
 const ALLY := Color("#a1d5cc")
 const FOE := Color("#f1a294")
 const TINT := Color("#3a2b24")
-const SLOT_LABELS := ["Basic", "I", "II", "III"]
-const ARENA_FEATURES := {
-	"lockwater": "Rising tide",
-	"kiln": "Fire vents",
-	"orchard": "Crosswinds",
-	"quarry": "Moving cover",
-	"observatory": "Eclipse veils",
-}
+const SLOT_LABELS := ["Basic", "I", "II", "III", "IV", "V"]
+const CAST_CARD_SECONDS := 1.65
 
 
 class LobbyBackdrop extends Control:
@@ -88,6 +84,11 @@ var _result_leave: Button
 var _result_fade: Tween
 var _last_feed := ""
 var _feed_until := 0
+var _battle_guides: Control
+var _cast_cards: Array[PanelContainer] = []
+var _cast_roles: Array[Label] = []
+var _cast_names: Array[Label] = []
+var _cast_until := PackedInt64Array([0, 0])
 
 
 func _ready() -> void:
@@ -209,14 +210,21 @@ func _build_loadout(parent: VBoxContainer) -> void:
 
 func _build_ability_list() -> void:
 	_kit_panel.add_child(_label("Tap a move to preview its animation", 17, MUTED))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	grid.add_theme_constant_override("h_separation", 7)
+	grid.add_theme_constant_override("v_separation", 7)
+	_kit_panel.add_child(grid)
 	var selection := ButtonGroup.new()
 	for slot in SLOT_LABELS.size():
-		var button := _button("", 60, 20)
+		var button := _button("", 65, 17)
 		button.toggle_mode = true
 		button.button_group = selection
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(_select_ability.bind(slot))
-		_kit_panel.add_child(button)
+		grid.add_child(button)
 		_ability_rows.append(button)
 	_ability_info = _wrapped_label("", 19, IVORY)
 	_ability_info.custom_minimum_size.y = 98
@@ -249,7 +257,8 @@ func _select_map(map_id: String) -> void:
 	selected_map = map_id
 	var arena: Dictionary = ArenaMaps.MAPS[map_id]
 	map_buttons[map_id].set_pressed_no_signal(true)
-	_map_info.text = "%s\n%s" % [ARENA_FEATURES[map_id], arena.description]
+	var guide: Dictionary = ArenaStage.ZONE_GUIDE[arena.kind]
+	_map_info.text = "%s · %s\n%s" % [guide.name, guide.effect, guide.tip]
 	_map_label.text = arena.name
 
 
@@ -266,7 +275,8 @@ func _select_class(class_id: String) -> void:
 	var indexes: Array = MobileKits.slots(class_id)
 	for slot in indexes.size():
 		var ability: Dictionary = kit.abilities[indexes[slot]]
-		_ability_rows[slot].text = "%s   ·   %s" % [SLOT_LABELS[slot], ability.name]
+		_ability_rows[slot].text = "%s\n%s" % [SLOT_LABELS[slot], ability.name]
+		_ability_rows[slot].tooltip_text = ability.name
 		_ability_rows[slot].set_pressed_no_signal(false)
 	_refresh_ability(0)
 	_ability_rows[0].set_pressed_no_signal(true)
@@ -287,7 +297,7 @@ func _refresh_ability(slot: int) -> void:
 		timing += "   ·   Costs %d %s" % [cost, kit.resource]
 	elif gain > 0:
 		timing += "   ·   Builds %d %s" % [gain, kit.resource]
-	_ability_info.text = "%s\n%s" % [timing, ability.description]
+	_ability_info.text = "%s · %s\n%s" % [ability.name, timing, ability.description]
 
 
 func _fit_lobby() -> void:
@@ -343,6 +353,8 @@ func _build_battlefield() -> void:
 	_pause.pressed.connect(func(): pause_pressed.emit())
 	top.add_child(_pause)
 
+	_build_cast_card(0)
+	_build_cast_card(1)
 	var messages := _column(battlefield, 3)
 	messages.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	messages.offset_left = -360
@@ -351,6 +363,27 @@ func _build_battlefield() -> void:
 	_hint = _battle_label(messages, 19, GOLD)
 	_notice = _battle_label(messages, 20, IVORY)
 	_feed = _battle_label(messages, 16, MUTED)
+	_battle_guides = BattleGuides.new()
+	battlefield.add_child(_battle_guides)
+
+
+func _build_cast_card(side: int) -> void:
+	var card := _panel(battlefield, Color("#121319eb"), 10)
+	card.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT if side == 0 else Control.PRESET_TOP_RIGHT)
+	card.offset_left = 22 if side == 0 else -340
+	card.offset_right = 338 if side == 0 else -22
+	card.offset_top = 119
+	card.offset_bottom = 183
+	var contents := _column(card, 2)
+	var color := GOLD if side == 0 else FOE
+	var role := _label("", 13, color)
+	var name := _label("", 20, IVORY, HORIZONTAL_ALIGNMENT_LEFT, true)
+	contents.add_child(role)
+	contents.add_child(name)
+	card.hide()
+	_cast_cards.append(card)
+	_cast_roles.append(role)
+	_cast_names.append(name)
 
 
 func _hud_space(parent: Control) -> void:
@@ -396,25 +429,89 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 		_reveal_result(show_result, quit_prompt)
 	if not in_match:
 		_last_feed = ""
+		clear_battle_cues()
 		return
+	var running: bool = game.phase == "active" and not quit_prompt
+	var player_at: Vector2 = game.fighters[0].position if not game.fighters.is_empty() else Vector2.ZERO
+	_battle_guides.update_battle(get_viewport().get_camera_3d(), game.environment_zones, game.fields, player_at, running)
+	_update_cast_cards(running)
 	_pause.disabled = game.phase != "active" or quit_prompt
 	_round_label.text = "ROUND %d  /  FIRST TO %d" % [game.round_number, game.round_limit()]
 	_score_label.text = "%d   /   %d" % [game.wins[0], game.wins[1]]
-	var ring_suffix := "  ·  Ring closing" if game.safe_radius < ArenaMatch.ARENA_RADIUS else ""
-	_time_label.text = "%02d s%s" % [ceili(game.round_time), ring_suffix]
+	var ring_suffix := "  ·  Stay inside ring" if game.safe_radius < ArenaMatch.ARENA_RADIUS else ""
+	var seconds := ceili(game.round_time)
+	_time_label.text = "%d:%02d%s" % [floori(seconds / 60.0), seconds % 60, ring_suffix]
 	var latest: String = game.feed[0] if not game.feed.is_empty() else ""
 	if latest != _last_feed:
 		_last_feed = latest
 		_feed_until = Time.get_ticks_msec() + 2600
 	_feed.text = latest if Time.get_ticks_msec() < _feed_until and not result.visible else ""
-	_hint.text = game.map_hint if not result.visible else ""
+	_hint.text = _arena_hint(game) if running else ""
 	if not game.fighters.is_empty():
 		_update_vitals(game, target)
 		var player_alive: bool = game.fighters[0].alive
-		_notice.text = feedback if player_alive else "Eliminated  ·  Spectating this round"
+		_notice.text = _player_notice(game, feedback) if player_alive else "Eliminated  ·  Spectating this round"
 	if result.visible:
 		_notice.text = ""
 		_update_result(game, quit_prompt)
+
+
+func _arena_hint(game: ArenaMatch) -> String:
+	if game.environment_zones.is_empty():
+		return ""
+	var zone: Dictionary = game.environment_zones[0]
+	var guide: Dictionary = ArenaStage.ZONE_GUIDE[zone.kind]
+	var seconds := ceili(zone.phase_left)
+	var status := "%d s left" % seconds if zone.phase == "active" else "in %d s" % (
+		seconds + int(ArenaMaps.ACTIVE_START - ArenaMaps.WARNING_START) if zone.phase == "idle" else seconds
+	)
+	return "%s %s  ·  %s" % [guide.name, status, guide.effect]
+
+
+func _player_notice(game: ArenaMatch, feedback: String) -> String:
+	var point: Vector2 = game.fighters[0].position
+	if game.safe_radius < ArenaMatch.ARENA_RADIUS and point.length_squared() > game.safe_radius * game.safe_radius:
+		return "Taking ring damage · Move inside the boundary"
+	for zone in game.environment_zones:
+		if zone.phase == "active" and zone.kind == "vent" and point.distance_squared_to(zone.position) < zone.radius * zone.radius:
+			return "Taking vent damage · Step out of the circle"
+	return feedback
+
+
+func record_cast(event: Dictionary, locked: int) -> void:
+	_battle_guides.record_cast(event, locked)
+	var player_effect: bool = event.target_id == 0 or 0 in event.affected_ids
+	if event.source_id == 0:
+		_show_cast(0, "YOUR ATTACK" if event.slot == 0 else "YOUR ABILITY", event)
+	elif event.slot > 0 and (player_effect or (event.team == 1 and event.source_id == locked)):
+		var role := "ALLY SUPPORT" if event.team == 0 else ("RIVAL · ON YOU" if player_effect else "RIVAL ABILITY")
+		_show_cast(1, role, event)
+
+
+func clear_battle_cues() -> void:
+	_cast_until.fill(0)
+	_battle_guides.clear_casts()
+	_battle_guides.hide()
+	for card in _cast_cards:
+		card.hide()
+
+
+func _show_cast(side: int, role: String, event: Dictionary) -> void:
+	var now := Time.get_ticks_msec()
+	if event.slot == 0 and now < _cast_until[side]:
+		return
+	_cast_roles[side].text = role
+	_cast_roles[side].modulate = ALLY if role == "ALLY SUPPORT" else Color.WHITE
+	_cast_names[side].text = event.name
+	_cast_until[side] = now + int(CAST_CARD_SECONDS * 1000.0)
+
+
+func _update_cast_cards(running: bool) -> void:
+	var now := Time.get_ticks_msec()
+	for side in _cast_cards.size():
+		var left := _cast_until[side] - now
+		_cast_cards[side].visible = running and left > 0
+		_cast_cards[side].modulate.a = clampf(left / 275.0, 0.0, 1.0)
 
 
 func _reveal_result(show_result: bool, paused: bool) -> void:

@@ -5,8 +5,10 @@ const MobileKits = preload("res://scripts/mobile_kits.gd")
 const ARENA_RADIUS = ArenaMaps.RADIUS
 const ROUND_SECONDS = 60.0
 const ROUNDS_TO_WIN = 3
-const MOBILE_ROUND_SECONDS = 52.0
-const MOBILE_ROUNDS_TO_WIN = 2
+const MOBILE_ROUND_SECONDS = 180.0
+const MOBILE_ROUNDS_TO_WIN = 3
+const MOBILE_HEALTH_MULTIPLIER = 4.0
+const MOBILE_BOT_ACTION_INTERVAL = 0.43
 const DODGE_COOLDOWN = 4.0
 const Masteries = preload("res://scripts/arena_masteries.gd")
 const KIT_MODULES = [
@@ -177,6 +179,8 @@ func _start_round() -> void:
 
 func _make_fighter(index: int, team: int, class_id: String) -> Dictionary:
 	var max_health: float = CLASS_INFO[class_id].max_health
+	if mobile_mode:
+		max_health *= MOBILE_HEALTH_MULTIPLIER
 	var side = -1.0 if team == 0 else 1.0
 	return {
 		"id": index,
@@ -261,7 +265,8 @@ func _tick_fighter(fighter: Dictionary, delta: float) -> void:
 			fighter.wound_damage = 0.0
 			_apply_damage(fighter, wound)
 	if fighter.alive and (fighter.position as Vector2).length() > safe_radius:
-		_apply_damage(fighter, 16.0 * delta)
+		var ring_damage := 16.0 * (MOBILE_HEALTH_MULTIPLIER if mobile_mode else 1.0)
+		_apply_damage(fighter, ring_damage * delta)
 
 
 func _can_act(fighter: Dictionary) -> bool:
@@ -580,7 +585,8 @@ func _step_bot(bot: Dictionary, delta: float) -> void:
 			direction = avoidance
 			moving_to_safety = true
 	if not moving_to_safety and bot.bot_wait <= 0.0:
-		bot.bot_wait = 0.25 + float(int(bot.id) % 3) * 0.045
+		var interval := MOBILE_BOT_ACTION_INTERVAL if mobile_mode else 0.25
+		bot.bot_wait = interval + float(int(bot.id) % 3) * 0.045
 		if _bot_ability(bot, enemy, distance):
 			return
 	if _blocked(origin + direction * 1.2, 0.35):
@@ -760,7 +766,7 @@ func aim_point(source: Dictionary, reach: float) -> Vector2:
 func place_field(source: Dictionary, kind: String, point: Vector2, radius: float, seconds: float, power: float) -> Dictionary:
 	var field := {
 		"source":source.id, "team":source.team, "kind":kind, "position":ArenaMaps.constrain(map_id, point),
-		"radius":radius, "remaining":seconds, "power":power, "pulse":0.0
+		"name":_pending_cast.get("name", ""), "radius":radius, "remaining":seconds, "power":power, "pulse":0.0
 	}
 	fields.append(field)
 	set_cast_destination(field.position)

@@ -233,7 +233,7 @@ func play_ability(slot: int) -> void:
 	champion.player.play(clip)
 	champion.player.advance(0.0)
 	_preview_framing(clip)
-	_invocation = 1.0
+	_invocation = 0.22
 
 
 func idle() -> void:
@@ -314,17 +314,19 @@ func set_active(active: bool) -> void:
 
 
 func _process(delta: float) -> void:
+	var cast_light := 0.0
 	if is_instance_valid(champion):
-		champion.player.advance(delta)
+		cast_light = champion.advance_motion(delta)
 	var focus_y := _camera.position.y - 0.36
 	if not is_equal_approx(_camera.size, _camera_size_target) or not is_equal_approx(focus_y, _camera_center_target):
 		var weight := 1.0 - exp(-12.0 * delta)
 		_apply_camera(lerpf(_camera.size, _camera_size_target, weight), lerpf(focus_y, _camera_center_target, weight))
 	_stand.rotation.y = lerp_angle(_stand.rotation.y, _orbit_target, 1.0 - exp(-19.0 * delta))
-	_invocation = move_toward(_invocation, 0.0, delta * 1.48)
+	_invocation = maxf(cast_light, move_toward(_invocation, 0.0, delta * 1.92))
 	_stage_age += delta
 	_backdrop_material.set_shader_parameter("invocation", _invocation)
 	_ground_material.set_shader_parameter("invocation", _invocation)
+	_rim_light.light_energy = 2.60 + _invocation * 0.92
 	_dais_light.albedo_color = _patron_tint.darkened(0.48 - 0.32 * _invocation)
 	for index in MOTE_COUNT:
 		var phase := fposmod(_stage_age * (0.105 + 0.013 * float(index % 5)) + float(index) * 0.38197, 1.0)

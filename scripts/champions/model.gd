@@ -49,6 +49,9 @@ var _previous_stun := false
 var _step_phase := 0.0
 var _playback_cadence := 1.0
 var _cast_recoil := 0.0
+var _cast_light := 0.0
+var _luminous: Array[StandardMaterial3D] = []
+var _rest_emission: PackedFloat32Array = []
 
 
 func build(class_id: String, archetype: String) -> void:
@@ -73,11 +76,22 @@ func build(class_id: String, archetype: String) -> void:
 		_model_cache[class_id] = _bake()
 		_parts.clear()
 	var meshes: Dictionary = _model_cache[class_id]
+	var luminous_sources := {}
 	for joint in meshes:
 		var piece := MeshInstance3D.new()
 		piece.name = "Sculpt"
 		piece.mesh = meshes[joint]
 		joints[joint].add_child(piece)
+		for surface in piece.mesh.get_surface_count():
+			var material := piece.mesh.surface_get_material(surface) as StandardMaterial3D
+			if material == null or not material.emission_enabled:
+				continue
+			if not luminous_sources.has(material):
+				var local_material := material.duplicate() as StandardMaterial3D
+				luminous_sources[material] = local_material
+				_luminous.append(local_material)
+				_rest_emission.append(material.emission_energy_multiplier)
+			piece.set_surface_override_material(surface, luminous_sources[material])
 	player = AnimationPlayer.new()
 	player.name = "Motion"
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
@@ -98,6 +112,7 @@ func reset_motion() -> void:
 	player.speed_scale = 1.0
 	player.play("idle")
 	player.seek(0.0, true)
+	_set_cast_light(0.0)
 
 
 func watch(fighter: Dictionary, delta: float) -> void:
@@ -137,7 +152,7 @@ func watch(fighter: Dictionary, delta: float) -> void:
 	var next := str(player.current_animation)
 	var moving := next in Animations.LOCOMOTION and next != "idle"
 	player.speed_scale = _playback_cadence if moving else 1.0
-	player.advance(delta)
+	advance_motion(delta)
 	if _cast_recoil > 0.0 and str(player.current_animation).begins_with("cast_"):
 		joints.spine.rotation.x += 0.21 * _cast_recoil
 		joints.head.rotation.x -= 0.26 * _cast_recoil
@@ -145,6 +160,32 @@ func watch(fighter: Dictionary, delta: float) -> void:
 	_previous_stun = stunned
 	_previous_position = at
 	_previous_health = health
+
+
+func advance_motion(delta: float) -> float:
+	player.advance(delta)
+	var light := 0.0
+	var clip := str(player.current_animation)
+	if clip.begins_with("cast_"):
+		var slot := int(clip.trim_prefix("cast_")) - 1
+		var contact := Animations.contact_time(champion, slot)
+		var start := Animations.visible_start(champion, slot)
+		var time := player.current_animation_position
+		var build := smoothstep(start, contact, time)
+		var settle := 1.0 - smoothstep(contact + 0.033, player.current_animation_length, time)
+		light = build * settle * (0.30 if slot == 0 else (1.0 if slot == 7 else 0.65))
+	_set_cast_light(light)
+	return light
+
+
+func _set_cast_light(light: float) -> void:
+	if absf(_cast_light - light) < 0.012 and light != 0.0:
+		return
+	if _cast_light == light:
+		return
+	_cast_light = light
+	for index in _luminous.size():
+		_luminous[index].emission_energy_multiplier = _rest_emission[index] * (1.0 + light * 2.1)
 
 
 func _select_locomotion(facing: Vector2) -> String:
@@ -429,7 +470,12 @@ static func _material(code: String) -> StandardMaterial3D:
 				material.emission_enabled = true
 				material.emission = material.albedo_color
 				material.emission_energy_multiplier = 0.72
-	if split[0] != "e":
+			"p":
+				# Polished crystal keeps a tight highlight across each facet.
+				material.metallic = 0.27
+				material.roughness = 0.19
+				material.metallic_specular = 0.72
+	if split[0] not in ["e", "p"]:
 		Finish.weather(material, split.size() == 2 and split[0] == "m")
 	_materials[code] = material
 	return material

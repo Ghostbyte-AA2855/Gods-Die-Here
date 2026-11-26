@@ -12,11 +12,34 @@ const PALETTES = {
 }
 const STYLES = {"lockwater": 0, "kiln": 1, "orchard": 2, "quarry": 3, "observatory": 4}
 const ZONE_PATTERNS = {"vent": 0, "wind": 1, "rise": 2, "veil": 3, "tide": 4}
-const ACTIVE_TINTS = {"vent": Color("ff743e"), "wind": Color("a1e9d4"), "rise": Color("eee2b2"), "veil": Color("bf9cff"), "tide": Color("65bfdc")}
+const ZONE_GUIDE = {
+	"vent": {
+		"name": "Fire vent", "effect": "10 damage / sec", "active_tint": Color("ff8058"),
+		"tip": "Step out before the heat ignites.",
+	},
+	"wind": {
+		"name": "Crosswind", "effect": "Pushes both teams", "active_tint": Color("94eee2"),
+		"tip": "The arrow shows where the wind will carry you.",
+	},
+	"rise": {
+		"name": "Rising slab", "effect": "Blocks movement and sight", "active_tint": Color("f0dd9d"),
+		"tip": "Clear the outline as it rises, then use the slab as cover.",
+	},
+	"veil": {
+		"name": "Eclipse veil", "effect": "Blocks targeting across edge", "active_tint": Color("d0adff"),
+		"tip": "Step inside to target a fighter within the same veil.",
+	},
+	"tide": {
+		"name": "High tide", "effect": "40% slower movement", "active_tint": Color("8bdbff"),
+		"tip": "Cross around the floodwater when you need to move quickly.",
+	},
+}
+const ZONE_PHASES = {"idle": 0, "warning": 1, "active": 2}
 
 const COURT_SHADER := preload("res://scripts/stage/court_surface.gdshader")
 const SURROUND_SHADER := preload("res://scripts/stage/surroundings.gdshader")
 const ZONE_SHADER := preload("res://scripts/stage/hazard.gdshader")
+const VEIL_SHADER := preload("res://scripts/stage/veil_curtain.gdshader")
 
 var _map_id := ""
 var _scenery: Node3D
@@ -38,7 +61,8 @@ func set_map(map_id: String, terrain: Array, environment_zones: Array) -> void:
 		var cover: Node3D = _covers[id]
 		var at: Vector2 = obstacle.position
 		cover.position = Vector3(at.x, 0, at.y)
-		cover.scale = Vector3(obstacle.radius, obstacle.height, obstacle.radius)
+		var raised_fraction := float(cover.get_meta("height_fraction", 1.0))
+		cover.scale = Vector3(obstacle.radius, obstacle.height * raised_fraction, obstacle.radius)
 	_retire_absent(_covers, present_cover)
 	var present_zones: Dictionary = {}
 	for zone: Dictionary in environment_zones:
@@ -361,6 +385,10 @@ func _make_cover(id: String, style: String) -> Node3D:
 		_:
 			_pier_cover(cover, body, trim)
 	_batch_props(cover)
+	if style == "slab":
+		cover.set_meta("height_fraction", 0.63)
+		var lift := cover.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		lift.tween_method(func(height: float): cover.set_meta("height_fraction", height), 0.63, 1.0, 0.18)
 	return cover
 
 
@@ -429,6 +457,10 @@ func _stratified_rock(cover: Node3D, face: Material, slab: bool) -> void:
 	_rock_column(cover, Vector3.ZERO, [Vector2(0.578, width * 1.02), Vector2(0.60, width * 1.025)], fissure, 0.13, false)
 	_rock_column(cover, Vector3.ZERO, [Vector2(0.606, width * 1.026), Vector2(0.638, width * 0.99)], mineral, 0.13, false)
 	_rock_column(cover, Vector3.ZERO, [Vector2(0.90, width * 0.75), Vector2(0.985, width * 0.55), Vector2(1.008, width * 0.49)], cap, 0.13)
+	if slab:
+		var seam := _mat("ac8b54", true)
+		_rock_column(cover, Vector3.ZERO, [Vector2(0.241, 0.984), Vector2(0.251, 0.984)], seam, 0.13, false)
+		_rock_column(cover, Vector3.ZERO, [Vector2(0.890, 0.773), Vector2(0.915, 0.748)], seam, 0.13, false)
 
 
 # An irregular annulus of planar faces reads as broken bedrock. Each
@@ -499,27 +531,49 @@ func _branch(parent: Node3D, from: Vector3, to: Vector3, top: float, bottom: flo
 
 func _make_zone(id: String, kind: String) -> MeshInstance3D:
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(2,2)
+	plane.size = Vector2(2, 2)
 	var material := ShaderMaterial.new()
 	material.shader = ZONE_SHADER
-	material.set_shader_parameter("kind",ZONE_PATTERNS.get(kind,0))
-	var node := _mesh(self,Vector3.ZERO,plane,material)
-	node.name = "Zone_"+id
+	material.set_shader_parameter("kind", ZONE_PATTERNS.get(kind, 0))
+	var node := _mesh(self, Vector3.ZERO, plane, material)
+	node.name = "Zone_" + id
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if kind == "veil":
+		var curtain_mesh := CylinderMesh.new()
+		curtain_mesh.top_radius = 0.978
+		curtain_mesh.bottom_radius = 0.978
+		curtain_mesh.height = 1.15
+		curtain_mesh.radial_segments = 40
+		curtain_mesh.rings = 2
+		curtain_mesh.cap_bottom = false
+		curtain_mesh.cap_top = false
+		var curtain_material := ShaderMaterial.new()
+		curtain_material.shader = VEIL_SHADER
+		curtain_material.set_shader_parameter("tint", ZONE_GUIDE.veil.active_tint)
+		var curtain := _mesh(node, Vector3.UP * 0.575, curtain_mesh, curtain_material)
+		curtain.name = "VeilCurtain"
+		curtain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		curtain.hide()
 	return node
 
 
 func _update_zone(node: MeshInstance3D, zone: Dictionary) -> void:
 	var p: Vector2 = zone.position
-	node.position = Vector3(p.x,0.050,p.y)
-	node.scale = Vector3(zone.radius,1,zone.radius)
-	var phase: int = {"idle":0,"warning":1,"active":2}.get(zone.phase,0)
-	var tint: Color = Color("f5c465") if phase == 1 else ACTIVE_TINTS.get(zone.kind,Color.WHITE)
+	node.position = Vector3(p.x, 0.050, p.y)
+	node.scale = Vector3(zone.radius, 1, zone.radius)
+	var phase: int = ZONE_PHASES.get(zone.phase, 0)
+	var guide: Dictionary = ZONE_GUIDE.get(zone.kind, {})
+	var active_tint: Color = guide.get("active_tint", Color.WHITE)
+	var tint := active_tint.lerp(Color("ffd47f"), 0.71) if phase == 1 else active_tint
 	var material := node.material_override as ShaderMaterial
-	material.set_shader_parameter("tint",tint)
-	material.set_shader_parameter("phase",phase)
-	material.set_shader_parameter("flow",zone.direction)
-	material.set_shader_parameter("until_change",zone.phase_left)
+	material.set_shader_parameter("tint", tint)
+	material.set_shader_parameter("phase", phase)
+	material.set_shader_parameter("flow", zone.direction)
+	var warning_seconds := ArenaMaps.ACTIVE_START - ArenaMaps.WARNING_START
+	material.set_shader_parameter("warning_fraction", clampf(zone.phase_left / warning_seconds, 0.0, 1.0))
+	if zone.kind == "veil":
+		var curtain := node.get_node("VeilCurtain") as MeshInstance3D
+		curtain.visible = phase == 2
 
 
 func _lantern(parent: Node3D, p: Vector3) -> void:

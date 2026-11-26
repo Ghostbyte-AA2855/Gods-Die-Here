@@ -68,13 +68,14 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 		for at in times:
 			var pose := AbilityMotion.sample(class_id, slot, at)
 			_mix_ready(pose, ready, 1.0 - smoothstep(0.0, beats.x, at) + smoothstep(beats.z, 1.0, at))
+			_plant_cast(pose, model)
 			poses.append(pose)
 		result.add_animation("cast_%d" % (slot + 1), _clip(model, record[1], times, poses, false))
 	return result
 
 
 static func visible_start(class_id: String, slot: int) -> float:
-	var maximum_lead := 0.080 if slot == 0 else (0.145 if slot == 7 else 0.110)
+	var maximum_lead := 0.080 if slot == 0 else (0.185 if slot == 7 else 0.145)
 	return maxf(0.0, contact_time(class_id, slot) - maximum_lead)
 
 
@@ -100,6 +101,25 @@ static func _mix_ready(pose: Dictionary, ready: Dictionary, weight: float) -> vo
 		pose[joint] = pose.get(joint, Vector3.ZERO) + ready[joint] * weight
 
 
+static func _plant_cast(pose: Dictionary, model: Node3D) -> void:
+	var pelvis: Transform3D = Transform3D(Basis.from_euler(pose.pelvis), model.joints.pelvis.position + pose.offset)
+	var floor_height := INF
+	for side in ["_l", "_r"]:
+		var foot := pelvis
+		for segment in ["thigh", "shin", "foot"]:
+			var joint: String = segment + side
+			foot *= Transform3D(Basis.from_euler(pose[joint]), model.joints[joint].position)
+		var bounds: AABB = model.joints["foot" + side].get_node("Sculpt").get_aabb()
+		# Project the boot's bounding box onto the vertical axis. This keeps
+		# the support sole above the floor even through angled knee bends.
+		var vertical := Vector3(absf(foot.basis.x.y), absf(foot.basis.y.y), absf(foot.basis.z.y))
+		var sole := (foot * bounds.get_center()).y - vertical.dot(bounds.size * 0.5)
+		floor_height = minf(floor_height, sole)
+	var offset: Vector3 = pose.offset
+	offset.y += maxf(0.0, -0.004 - floor_height)
+	pose.offset = offset
+
+
 static func _clip(model: Node3D, seconds: float, times: PackedFloat32Array, poses: Array, loop: bool) -> Animation:
 	var animation := Animation.new()
 	animation.length = seconds
@@ -118,6 +138,12 @@ static func _clip(model: Node3D, seconds: float, times: PackedFloat32Array, pose
 	for index in times.size():
 		var offset: Vector3 = poses[index].get("offset", Vector3.ZERO)
 		animation.position_track_insert_key(lift, minf(seconds, times[index] * seconds), pelvis.position + offset)
+	if model.champion == "glassmage":
+		var shards := animation.add_track(Animation.TYPE_SCALE_3D)
+		animation.track_set_path(shards, model.get_path_to(model.joints.ornament))
+		for index in times.size():
+			var spread: Vector3 = poses[index].get("shard_spread", Vector3.ONE)
+			animation.scale_track_insert_key(shards, minf(seconds, times[index] * seconds), spread)
 	return animation
 
 

@@ -14,6 +14,8 @@ func _initialize() -> void:
 		_check_kit(class_id)
 	_check_bot_casts()
 	_check_series()
+	_check_mobile_endgame()
+	_check_field_name()
 	print("Mobile rules: %d/%d checks passed" % [checks - failures, checks])
 	quit(1 if failures else 0)
 
@@ -21,17 +23,17 @@ func _initialize() -> void:
 func _check_kit(class_id: String) -> void:
 	var slots: Array = MobileKits.slots(class_id)
 	var kit: Dictionary = ArenaMatch.CLASS_INFO[class_id]
-	_check(slots.size() == 4 and slots.front() == 0, class_id + " offers one basic attack and three abilities")
+	_check(slots.size() == 6 and slots.front() == 0, class_id + " offers one basic attack and five abilities")
 	var seen := {}
 	for slot: int in slots:
 		_check(slot >= 0 and slot < kit.abilities.size() and not seen.has(slot), class_id + " exposes a distinct valid slot %d" % slot)
 		seen[slot] = true
-	if slots.size() != 4 or seen.size() != 4 or seen.keys().any(func(slot): return slot < 0 or slot >= kit.abilities.size()):
+	if slots.size() != 6 or seen.size() != 6 or seen.keys().any(func(slot): return slot < 0 or slot >= kit.abilities.size()):
 		return
 
 	var blocked = _encounter(class_id)
 	var player: Dictionary = blocked.fighters[0]
-	_check(not blocked.try_mobile_ability(-1) and not blocked.try_mobile_ability(4), class_id + " rejects out-of-range touch buttons")
+	_check(not blocked.try_mobile_ability(-1) and not blocked.try_mobile_ability(6), class_id + " rejects out-of-range touch buttons")
 	for slot in kit.abilities.size():
 		if not slots.has(slot):
 			var target := _target_for(kit.abilities[slot])
@@ -82,8 +84,11 @@ func _prepare_cast(game, class_id: String, slot: int, slots: Array) -> void:
 		"breakwater":
 			if slot == 6:
 				setup = 2
+		"threadkeeper":
+			if slot == 3:
+				setup = 2
 		"echo_duelist":
-			if slot == 2:
+			if slot in [2, 4]:
 				setup = 1
 		"blood_cantor":
 			if slot == 6:
@@ -95,17 +100,17 @@ func _prepare_cast(game, class_id: String, slot: int, slots: Array) -> void:
 			if slot in [2, 7]:
 				setup = 0
 		"winter_scribe":
-			if slot == 2:
+			if slot in [2, 7]:
 				game.fighters[3].position = Vector2(4.5, 0)
 				setup = 1
 		"lamplighter":
-			if slot == 7:
+			if slot in [5, 7]:
 				setup = 2
 		"longwatch", "forgecaller", "chainrunner":
 			if slot == 7:
 				setup = 1
 		"glassmage":
-			if slot in [4, 7]:
+			if slot in [2, 4, 7]:
 				setup = 1
 		"duskmoth":
 			if slot in [5, 7]:
@@ -113,6 +118,8 @@ func _prepare_cast(game, class_id: String, slot: int, slots: Array) -> void:
 	if setup >= 0:
 		var ability: Dictionary = game.fighters[0].abilities[setup]
 		_check(game.try_mobile_ability(slots.find(setup), _target_for(ability)), class_id + " can set up its combo with " + ability.name)
+		if class_id == "threadkeeper" and slot == 3:
+			game._deal_damage(game.fighters[3], game.fighters[1], 16.0)
 
 
 func _check_bot_casts() -> void:
@@ -155,13 +162,13 @@ func _check_bot_casts() -> void:
 		if event.source_id > 0:
 			sources[event.source_id] = true
 			_check(MobileKits.slots(event.class_id).has(event.slot), "Bot %d only uses slots in the mobile kit" % event.source_id)
-	_check(sources.size() == 5, "Both teams' bots use their reduced kits in a live match")
+	_check(sources.size() == 5, "Both teams' bots use their mobile kits in a live match")
 
 
 func _check_series() -> void:
 	var game = _encounter("breakwater")
-	_check(game.fighters.size() == 6 and is_equal_approx(game.round_time, 52.0), "The mobile 3v3 uses a 52-second round")
-	var series := [0, 1, 0]
+	_check(game.fighters.size() == 6 and is_equal_approx(game.round_time, 180.0), "The mobile 3v3 allows three minutes per round")
+	var series := [0, 1, 0, 1, 0]
 	for index in series.size():
 		var winner: int = series[index]
 		for fighter in game.fighters:
@@ -173,10 +180,36 @@ func _check_series() -> void:
 		if index < series.size() - 1:
 			_check(game.phase == "round_over" and not game.try_mobile_ability(0), "Combat stops between rounds")
 			game.next_round()
-			_check(game.phase == "active" and is_equal_approx(game.round_time, 52.0), "A subsequent round restores the timer")
-	_check(game.phase == "match_over" and game.match_winner == 0 and game.wins == [2, 1], "The second win ends the mobile series")
+			_check(game.phase == "active" and is_equal_approx(game.round_time, 180.0), "A subsequent round restores the timer")
+	_check(game.phase == "match_over" and game.match_winner == 0 and game.wins == [3, 2], "The third win ends the mobile series")
 	game.next_round()
-	_check(game.round_number == 3 and game.phase == "match_over", "The completed series cannot advance another round")
+	_check(game.round_number == 5 and game.phase == "match_over", "The completed series cannot advance another round")
+
+
+func _check_mobile_endgame() -> void:
+	var mobile = _encounter("breakwater")
+	var desktop = _encounter("breakwater", false)
+	_check(mobile.fighters[0].max_health >= desktop.fighters[0].max_health * 2.0, "Mobile health protects against early burst")
+	for game in [mobile, desktop]:
+		game.fighters[0].position = Vector2(12.0, 0.0)
+		game.fighters[0].health = game.fighters[0].max_health
+		game.round_time = 25.0
+		game.step(TICK, Vector2.ZERO, Vector2.ZERO)
+		_check(game.fighters[0].health == game.fighters[0].max_health, "The ring leaves the outer lane safe at the start of contraction")
+		game.round_time = 19.0
+		game.step(TICK, Vector2.ZERO, Vector2.ZERO)
+		_check(game.safe_radius < 12.0 and game.fighters[0].health < game.fighters[0].max_health, "The final ring forces fighters toward the center")
+	var mobile_fraction: float = mobile.fighters[0].health / mobile.fighters[0].max_health
+	var desktop_fraction: float = desktop.fighters[0].health / desktop.fighters[0].max_health
+	_check(is_equal_approx(mobile_fraction, desktop_fraction), "The ring keeps the same percentage health pressure with larger mobile health pools")
+
+
+func _check_field_name() -> void:
+	var game = _encounter("forgecaller")
+	var slots := MobileKits.slots("forgecaller")
+	_check(game.try_mobile_ability(slots.find(4)), "Forgecaller can place Furnace Bed on the mobile layout")
+	_check(game.fields.size() == 1 and game.fields[0].name == "Furnace Bed" and game.fields[0].kind == "damage",
+		"A ground effect carries the originating spell name and behavior for the HUD")
 
 
 func _check(condition: bool, description: String) -> void:

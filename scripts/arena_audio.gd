@@ -4,6 +4,7 @@ const CombatFx = preload("res://scripts/combat_fx.gd")
 const RATE := 22050
 const VOICE_COUNT := 8
 const BACKGROUND_GAP_MS := 55
+const INCOMING_GAP_MS := 220
 const CLASS_TONES := {
 	"breakwater": 145, "forgecaller": 170, "bellwarden": 232, "threadkeeper": 520,
 	"lamplighter": 440, "blood_cantor": 245, "dream_shepherd": 466, "echo_duelist": 285,
@@ -46,6 +47,8 @@ const CUES := {
 		"strike": 0.24, "ring": 0.12, "body": 0.81, "air": 0.15 },
 	"windup": { "length": 0.18, "pitch": 179.0, "glide": 2.24, "attack": 0.075,
 		"strike": 0.01, "ring": 0.14, "body": 0.27, "air": 0.68 },
+	"incoming": { "length": 0.17, "pitch": 472.0, "glide": 0.37, "attack": 0.004,
+		"strike": 0.50, "ring": 0.19, "body": 0.57, "air": 0.36 },
 	"fall": { "length": 0.55, "pitch": 116.0, "glide": 0.56, "attack": 0.010,
 		"strike": 0.61, "ring": 0.26, "body": 0.42, "air": 0.26 },
 	"warning": { "length": 0.21, "pitch": 582.0, "glide": 0.99, "attack": 0.010,
@@ -61,7 +64,7 @@ const CUES := {
 	"veil": { "length": 0.60, "pitch": 245.0, "glide": 0.83, "attack": 0.040,
 		"strike": 0.16, "ring": 0.30, "body": 0.57, "air": 0.15 },
 }
-enum Priority { BACKGROUND, WINDUP, NEARBY, PLAYER, WARNING, ELIMINATION }
+enum Priority { BACKGROUND, WINDUP, NEARBY, INCOMING, PLAYER, WARNING, ELIMINATION }
 
 var muted := false
 var _voices: Array[AudioStreamPlayer] = []
@@ -70,6 +73,7 @@ var _starts: Array[int] = []
 var _clips: Dictionary = {}
 var _warm_queue: Array = CUES.keys()
 var _last_background := -BACKGROUND_GAP_MS
+var _last_incoming := -INCOMING_GAP_MS
 var _map := ""
 var _phases: Dictionary = {}
 
@@ -108,7 +112,7 @@ func toggle() -> void:
 func windup(event: Dictionary) -> void:
 	if muted or int(event.get("source_id", -1)) != 0 or int(event.get("slot", 0)) == 0:
 		return
-	var strong := int(event.slot) == 7
+	var strong := _is_major(event)
 	_play("windup", -22.0 if strong else -25.0, _class_pitch(event), Priority.WINDUP)
 
 
@@ -123,7 +127,7 @@ func cast(event: Dictionary) -> void:
 	var local_player := int(event.get("source_id", -1)) == 0
 	var affected: Array = event.get("affected_ids", [])
 	var near_player := affected.has(0)
-	var strong := slot == 7
+	var strong := _is_major(event)
 	var pitch := _class_pitch(event)
 	if strong:
 		pitch *= 0.91
@@ -139,11 +143,19 @@ func cast(event: Dictionary) -> void:
 	elif near_player:
 		volume = -22.0 if strong else -25.0
 		priority = Priority.NEARBY
+		if slot > 0 and int(event.get("team", 0)) == 1:
+			_play("incoming", -16.0 if strong else -19.0, 0.90 if strong else 1.0, Priority.INCOMING)
 	elif strong:
 		volume = -27.0
 	if affected.is_empty() and cue in ["edge", "bolt", "crush", "chain"]:
 		volume -= 3.0
 	_play(cue, volume, pitch, priority)
+
+
+func _is_major(event: Dictionary) -> bool:
+	var slot := int(event.get("slot", -1))
+	var affected: Array = event.get("affected_ids", [])
+	return slot == 7 or (slot > 0 and affected.size() >= 2)
 
 
 func elimination(local: bool) -> void:
@@ -181,6 +193,8 @@ func _play(cue: String, volume: float, pitch: float, priority: int) -> void:
 	var now := Time.get_ticks_msec()
 	if priority == Priority.BACKGROUND and now - _last_background < BACKGROUND_GAP_MS:
 		return
+	if priority == Priority.INCOMING and now - _last_incoming < INCOMING_GAP_MS:
+		return
 	var channel := _choose_channel(priority)
 	if channel < 0:
 		return
@@ -196,6 +210,8 @@ func _play(cue: String, volume: float, pitch: float, priority: int) -> void:
 	_starts[channel] = now
 	if priority == Priority.BACKGROUND:
 		_last_background = now
+	elif priority == Priority.INCOMING:
+		_last_incoming = now
 	voice.play()
 
 

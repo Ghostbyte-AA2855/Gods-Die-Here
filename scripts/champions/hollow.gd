@@ -16,8 +16,8 @@ const SCUM := "5b8977"
 const DROWNED_BONE := "aaa987"
 const SALT := "85decb"
 const OBSIDIAN := "262135"
-const GLASS := "m:675386"
-const VIOLET := "c1a1ff"
+const GLASS := "p:8067a0"
+const VIOLET := "cbb1fc"
 
 
 static func build(model, class_id: String) -> void:
@@ -322,6 +322,8 @@ static func _vellis(m) -> void:
 	_plate(m, "spine", [[-0.318, 1.40],[-0.15, 1.486],[-0.012, 1.29],[-0.027, 1.068],[-0.183, 0.964],[-0.25, 1.18]], -0.174, 0.073, "332a48")
 	_plate(m, "spine", [[0.015, 1.291],[0.176, 1.433],[0.312, 1.376],[0.232, 1.113],[0.061, 0.951]], -0.194, 0.084, GLASS)
 	_plate(m, "spine", [[-0.032, 1.26],[0.084, 1.377],[0.129, 1.328],[0.041, 1.17],[-0.003, 1.11]], -0.259, 0.017, "e:986bc9")
+	_path(m, "spine", [Vector3(0.026, 1.089, -0.254), Vector3(0.162, 1.166, -0.255), Vector3(0.237, 1.306, -0.253), Vector3(0.196, 1.406, -0.250)], 0.006, 0.014, "p:b6ade0")
+	_path(m, "spine", [Vector3(-0.278, 1.395, -0.227), Vector3(-0.182, 1.444, -0.229), Vector3(-0.031, 1.302, -0.231)], 0.012, 0.006, "p:8985b5")
 	_carved(m, "head", [
 		[Vector3(0.016,1.511,-0.017),Vector2(0.075,0.127)],
 		[Vector3(0.011,1.594,0.005),Vector2(0.107,0.139)],
@@ -334,8 +336,9 @@ static func _vellis(m) -> void:
 	for sliver in 4:
 		var x := -0.028 + sliver * 0.028
 		m.tube("head",Vector3(x,1.63 - sliver*0.006,-0.221), Vector3(x*0.72,1.551+sliver*0.012,-0.215), 0.011, 0.003, "m:77708c", 5)
-	_plate(m, "head", [[-0.177, 1.766],[-0.093, 1.891],[-0.031, 1.867],[0.028, 1.702],[-0.024, 1.57],[-0.123, 1.601]], -0.17, 0.074, "m:78609d")
-	_plate(m, "head", [[-0.032, 1.88],[0.101, 1.849],[0.169, 1.745],[0.10, 1.738],[0.044, 1.705]], -0.143, 0.062, "4c3c68")
+	_plate(m, "head", [[-0.177, 1.766],[-0.093, 1.891],[-0.031, 1.867],[0.028, 1.702],[-0.024, 1.57],[-0.123, 1.601]], -0.17, 0.074, "p:8a7ba8")
+	_plate(m, "head", [[-0.032, 1.88],[0.101, 1.849],[0.169, 1.745],[0.10, 1.738],[0.044, 1.705]], -0.143, 0.062, "p:655080")
+	_plate(m, "head", [[-0.151,1.775],[-0.091,1.885],[-0.04,1.854],[-0.102,1.789]], -0.215, 0.014, "p:b4a9cb")
 	_plate(m, "head", [[0.056, 1.718],[0.166, 1.744],[0.14, 1.625],[0.043, 1.571],[0.011, 1.618]], -0.151, 0.071, OBSIDIAN)
 	_path(m, "head", [Vector3(-0.042,1.867,-0.208), Vector3(0.002,1.755,-0.229), Vector3(-0.023,1.72,-0.237), Vector3(0.016,1.655,-0.234), Vector3(-0.025,1.587,-0.206)], 0.012, 0.006, "e:" + VIOLET)
 	_plate(m, "head", [[-0.14, 1.737],[-0.057, 1.735],[-0.024, 1.715],[-0.122, 1.709]], -0.236, 0.011, "e:dfc2ff")
@@ -351,7 +354,7 @@ static func _vellis(m) -> void:
 		for i in range(3):
 			var x := side * (0.317 + i * 0.05)
 			var y := 1.385 - i * 0.105
-			_crystal(m, upper, Vector3(x, y, -0.132), Vector3(side * 0.12, 0.27 - i * 0.027, 0.003), 0.069 - i * 0.009, "m:5f4d7d", "e:9871cf")
+			_crystal(m, upper, Vector3(x, y, -0.132), Vector3(side * 0.12, 0.27 - i * 0.027, 0.003), 0.069 - i * 0.009, GLASS, "e:a689ce")
 		for i in 3:
 			var at := Vector3(side * 0.183, 0.26 + i * 0.081, -0.088)
 			_crystal(m, _side("shin", side), at, Vector3(side * 0.053, 0.137, -0.005), 0.055, "m:453955", "e:8053b3")
@@ -370,8 +373,9 @@ static func _vellis(m) -> void:
 			var angle := radians_for_shard(i)
 			var point := Vector3(side * (0.39 + sin(angle) * 0.28), 1.26 + cos(angle) * 0.63, 0.279 + 0.03 * i)
 			var vector := Vector3(side * sin(angle) * 0.20, cos(angle) * 0.39 + 0.018, 0.042)
-			_crystal(m, "ornament", point, vector, 0.075 + i * 0.015, GLASS if i == 0 else "m:4b3a70", "e:" + VIOLET)
-	_crystal(m, "ornament", Vector3(0.093, 2.038, 0.28), Vector3(-0.10, 0.312, 0.047), 0.103, "m:8270a0", "e:c599fa")
+			_crystal(m, "ornament", point, vector, 0.075 + i * 0.015, GLASS if i == 0 else "p:62568a", "e:" + VIOLET)
+			_crystal(m, "ornament", point + Vector3(side * 0.10, -0.079, 0.070), vector * 0.43, 0.031, "p:a296c1", "e:" + VIOLET)
+	_crystal(m, "ornament", Vector3(0.093, 2.038, 0.28), Vector3(-0.10, 0.312, 0.047), 0.103, "p:a597c4", "e:c599fa")
 	for i in range(3):
 		_crystal(m, "hand_r", Vector3(0.57 + i * 0.061, 0.88 + i * 0.07, -0.13 - i * 0.025), Vector3(0.061 + i * 0.016, 0.12 + 0.02 * i, -0.04), 0.027, GLASS, "e:e1c6ff")
 

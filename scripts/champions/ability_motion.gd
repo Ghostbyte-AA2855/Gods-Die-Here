@@ -255,6 +255,10 @@ static func sample(class_id: String, slot: int, normalized_time: float) -> Dicti
 	var loaded := _pose(gesture, family, lead, clip[5], clip[6], -1)
 	var contact_pose := _pose(gesture, family, lead, clip[5], clip[6], 0)
 	var follow := _pose(gesture, family, lead, clip[5], clip[6], 1)
+	if class_id == "forgecaller" and slot == 7:
+		_shape_hammerfall(loaded, contact_pose, follow)
+	elif class_id == "glassmage" and slot == 7:
+		_shape_shattercast(loaded, contact_pose, follow)
 	var pose := _body_pose(t, timing, loaded, contact_pose, follow)
 	# Free ends lag the body and are still catching up during the recovery.
 	var drift := _body_pose(maxf(t - 0.063 * sin(t * PI), 0.0), timing, loaded, contact_pose, follow)
@@ -265,7 +269,37 @@ static func sample(class_id: String, slot: int, normalized_time: float) -> Dicti
 	for name in pose:
 		pose[name] = (pose[name] as Vector3) * (PI / 180.0) * force
 	pose["offset"] = offset * force
+	if class_id == "glassmage":
+		var gather := smoothstep(0.0, timing.x, t) * (1.0 - smoothstep(timing.x, contact, t))
+		var scatter := smoothstep(timing.x, contact, t) * (1.0 - smoothstep(contact, minf(1.0, timing.z + 0.18), t))
+		var emphasis := 1.0 if slot == 7 else (0.33 if slot == 0 else 0.65)
+		pose["shard_spread"] = Vector3.ONE + Vector3(0.23, 0.15, 0.20) * (scatter - gather * 0.53) * emphasis
 	return pose
+
+
+static func _shape_hammerfall(loaded: Dictionary, contact: Dictionary, follow: Dictionary) -> void:
+	# Draw the head behind the shoulder, then drive the off arm across the
+	# chest as the hammer comes down. The support arm catches the follow-through.
+	loaded.spine += Vector3(2.0, -13.0, 4.0)
+	loaded.upper_r += Vector3(5.0, -12.0, 6.0)
+	loaded.fore_l += Vector3(14.0, -22.0, -4.0)
+	contact.spine += Vector3(-9.0, 9.0, -5.0)
+	contact.upper_r += Vector3(-8.0, 10.0, -11.0)
+	contact.fore_l += Vector3(27.0, -18.0, 13.0)
+	follow.fore_r += Vector3(12.0, 10.0, -14.0)
+	follow.fore_l += Vector3(18.0, -17.0, 7.0)
+
+
+static func _shape_shattercast(loaded: Dictionary, contact: Dictionary, follow: Dictionary) -> void:
+	# Hands close around an imaginary prism before a two-handed split.
+	loaded.upper_r += Vector3(8.0, -14.0, -25.0)
+	loaded.upper_l += Vector3(19.0, 13.0, 18.0)
+	loaded.fore_r += Vector3(22.0, 10.0, -10.0)
+	loaded.fore_l += Vector3(28.0, -8.0, 8.0)
+	contact.upper_r += Vector3(-5.0, -11.0, 7.0)
+	contact.upper_l += Vector3(-10.0, 7.0, -8.0)
+	follow.hand_r += Vector3(11.0, -16.0, 16.0)
+	follow.hand_l += Vector3(9.0, 19.0, -20.0)
 
 
 static func beats(clip: Array) -> Vector3:

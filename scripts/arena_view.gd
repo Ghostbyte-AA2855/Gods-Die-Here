@@ -7,6 +7,8 @@ const ChampionModel = preload("res://scripts/champions/model.gd")
 const EliminationFx = preload("res://scripts/elimination_fx.gd")
 const ArenaStage = preload("res://scripts/arena_stage.gd")
 const CombatFx = preload("res://scripts/combat_fx.gd")
+const BattleGuides = preload("res://scripts/mobile_battle_guides.gd")
+const FIELD_MARKER_SHADER = preload("res://scripts/fx/field_marker.gdshader")
 const ARENA_RADIUS := 14.0
 const CAMERA_OFFSET := Vector3(0.0, 15.5, 13.5)
 const PHONE_CAMERA_NEAR := Vector3(0.0, 10.8, 11.9)
@@ -374,11 +376,25 @@ func _update_fields(fields: Array) -> void:
 			var marker := _label(ring, Vector3(0, 0.22, -0.9), "", Color.WHITE, 0.0045)
 			marker.name = "Effect"
 			marker.top_level = true
+			marker.visible = not phone_camera
+			if phone_camera:
+				var material := ShaderMaterial.new()
+				material.shader = FIELD_MARKER_SHADER
+				var floor_mark := _quad(ring, Vector3.DOWN * 0.016, Vector2(2, 2), material)
+				floor_mark.name = "FloorMark"
+				floor_mark.rotation.x = -PI * 0.5
 			_field_rings.append(ring)
 		var ring: MeshInstance3D = _field_rings[index]
 		var radius: float = maxf(0.01, field.radius)
 		var point: Vector2 = field.position
 		var tint: Color = TEAM_COLORS[field.team]
+		if phone_camera:
+			var style: Dictionary = BattleGuides.FIELD_STYLES[field.kind]
+			tint = style.friendly if field.team == 0 else style.enemy
+			var floor_mark := ring.get_node("FloorMark") as MeshInstance3D
+			var floor_material := floor_mark.material_override as ShaderMaterial
+			floor_material.set_shader_parameter("tint", tint)
+			floor_material.set_shader_parameter("motif", style.icon)
 		ring.position = Vector3(point.x, 0.07 + float(index % 6) * 0.005, point.y)
 		ring.scale = Vector3(radius, 1.0, radius)
 		var material: StandardMaterial3D = ring.material_override

@@ -174,11 +174,11 @@ func _dodge_mobile() -> void:
 		return
 	if game.try_break_free():
 		view.flash_ability(0, -2, -1)
-		touch.cue(4)
+		touch.cue(MobileTouch.DODGE_BUTTON)
 		_set_feedback("Break Free used")
 	elif game.try_dodge(_movement()):
 		view.flash_ability(0, -1, -1)
-		touch.cue(4)
+		touch.cue(MobileTouch.DODGE_BUTTON)
 	else:
 		_set_feedback("Dodge unavailable")
 
@@ -249,6 +249,7 @@ func _start(class_id: String) -> void:
 		mobile_slots = MobileKits.slots(class_id)
 		attack_retry = 0.0
 		touch.reset()
+		hud.clear_battle_cues()
 	game.start_match(class_id, -1, hud.selected_mastery, hud.selected_map)
 	_render()
 
@@ -256,6 +257,8 @@ func _start(class_id: String) -> void:
 func _advance() -> void:
 	if game.phase == "round_over":
 		view.clear_casts()
+		if mobile_mode:
+			hud.clear_battle_cues()
 		selected_target = -1
 		feedback_time = 0.0
 		game.next_round()
@@ -309,5 +312,7 @@ func _render() -> void:
 
 func _cast_released(event: Dictionary) -> void:
 	audio_cues.cast(event)
-	if mobile_mode and event.source_id == 0:
-		touch.cue(mobile_slots.find(event.slot))
+	if mobile_mode:
+		hud.record_cast(event, selected_target)
+		if event.source_id == 0:
+			touch.cue(mobile_slots.find(event.slot))

@@ -13,18 +13,30 @@ const NO_POINTER := -3
 const STICK_ROLE := -1
 const FIELD_ROLE := -2
 const IGNORED_ROLE := -3
-const DODGE_BUTTON := 4
-const BREAK_FREE_GLYPH := 5
+const DODGE_BUTTON := 6
+const HIT_PADDING := 3.0
+const CONTROL_PADDING := 14.0
 
+# Two thumb rows keep the larger basic attack low and Dodge apart from the spells.
 const OFFSETS := [
-	Vector2(81, 88),
-	Vector2(185, 67),
-	Vector2(177, 168),
-	Vector2(72, 193),
-	Vector2(289, 82),
+	Vector2(71, 68),
+	Vector2(171, 61),
+	Vector2(171, 154),
+	Vector2(72, 165),
+	Vector2(263, 153),
+	Vector2(266, 60),
+	Vector2(70, 255),
 ]
-const RADII := [50.0, 41.0, 41.0, 42.0, 39.0]
-const ACCENTS := [Color("c7a16d"), Color("dd8459"), Color("81b9b2"), Color("d989a3"), Color("a7b7c4")]
+const RADII := [49.0, 39.0, 39.0, 39.0, 39.0, 39.0, 38.0]
+const ACCENTS := {
+	"basic": Color("eabe76"),
+	"enemy": Color("ec987c"),
+	"ally": Color("98dec5"),
+	"self": Color("9bcfed"),
+	"aim": Color("d3afea"),
+	"dodge": Color("bccce1"),
+	"break_free": Color("f4c176"),
+}
 const INK := Color("14101a")
 const TEXT := Color("fff0d6")
 
@@ -38,7 +50,8 @@ var _stick_offset := Vector2.ZERO
 var _fighter: Dictionary = {}
 var _slots: Array = []
 var _resource := ""
-var _cue_until: PackedInt64Array = [0, 0, 0, 0, 0]
+var _cue_until := PackedInt64Array()
+var _label_layouts: Dictionary = {}
 
 
 func _ready() -> void:
@@ -46,6 +59,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = _active
 	set_process_unhandled_input(_active)
+	_cue_until.resize(OFFSETS.size())
 	resized.connect(queue_redraw)
 
 
@@ -130,6 +144,9 @@ func _press(pointer: int, at: Vector2) -> bool:
 			if button == 0:
 				attack_held = true
 			ability_pressed.emit(button)
+	elif _button_at(at, CONTROL_PADDING) >= 0:
+		# Near misses stay with the controls so they cannot clear a fighter lock.
+		_pointers[pointer] = {"role": IGNORED_ROLE}
 	elif _stick_id == NO_POINTER and at.x <= 270.0 and at.y >= size.y * 0.59:
 		_stick_id = pointer
 		_stick_origin = at
@@ -179,9 +196,10 @@ func _center(button: int) -> Vector2:
 	return size - OFFSETS[button]
 
 
-func _button_at(at: Vector2) -> int:
+func _button_at(at: Vector2, padding: float = HIT_PADDING) -> int:
 	for button in OFFSETS.size():
-		if at.distance_to(_center(button)) <= RADII[button] + 3.0:
+		var radius: float = RADII[button] + padding
+		if at.distance_squared_to(_center(button)) <= radius * radius:
 			return button
 	return -1
 
@@ -223,21 +241,27 @@ func _draw_stick() -> void:
 func _draw_button(button: int) -> void:
 	var center := _center(button)
 	var radius: float = RADII[button]
-	var accent: Color = ACCENTS[button]
 	var held := _button_held(button)
 	var label := "Attack"
-	var glyph := button
+	var glyph := "basic" if button == 0 else "enemy"
 	var remaining := 0.0
 	var duration := ArenaMatch.DODGE_COOLDOWN
-	var short_on_resource := false
+	var blocked := ""
+	if float(_fighter.get("stun", 0.0)) > 0.0:
+		blocked = "Stunned"
+	elif float(_fighter.get("mend_time", 0.0)) > 0.0:
+		blocked = "Casting"
 	if button == DODGE_BUTTON:
 		if ArenaMatch.can_break_free(_fighter):
 			label = "Break Free"
-			glyph = BREAK_FREE_GLYPH
-			accent = Color("f4c176")
+			glyph = "break_free"
+			blocked = ""
 		else:
 			label = "Dodge"
+			glyph = "dodge"
 			remaining = float(_fighter.get("dodge_cooldown", 0.0))
+			if blocked.is_empty() and ArenaMatch.has_status(_fighter, "root"):
+				blocked = "Rooted"
 	elif button < _slots.size():
 		var slot := int(_slots[button])
 		var abilities: Array = _fighter.get("abilities", [])
@@ -247,10 +271,18 @@ func _draw_button(button: int) -> void:
 			label = str(ability.name)
 			remaining = float(cooldowns[slot])
 			duration = float(ability.cooldown)
-			short_on_resource = float(_fighter.get("meter", 0.0)) < float(ability.cost)
+			if button > 0:
+				glyph = str(ability.get("target", "enemy"))
+			if blocked.is_empty():
+				if button > 0 and ArenaMatch.has_status(_fighter, "silence"):
+					blocked = "Silenced"
+				elif float(_fighter.get("meter", 0.0)) < float(ability.cost):
+					blocked = "Need %d %s" % [int(ability.cost), _resource]
 	elif button > 0:
 		label = "Skill %d" % button
-	var unavailable := remaining > 0.0 or short_on_resource
+	var accent: Color = ACCENTS.get(glyph, ACCENTS.enemy)
+	var unavailable := remaining > 0.0 or not blocked.is_empty()
+	held = held and not unavailable
 	var flare := clampf((_cue_until[button] - Time.get_ticks_msec()) / 230.0, 0.0, 1.0)
 	var border := accent.darkened(0.42) if unavailable else accent
 	if held or flare > 0.0:
@@ -264,49 +296,49 @@ func _draw_button(button: int) -> void:
 	if flare > 0.0:
 		draw_arc(center, radius + 2.0 + (1.0 - flare) * 9.0, 0.0, TAU, 40, Color(accent.lightened(0.35), flare * 0.7), 2.0, true)
 	_draw_diamond(center - Vector2(0, radius - 2.0), 3.8, border)
+	if button == DODGE_BUTTON:
+		# A second full ring makes Dodge recognizable by shape as well as color.
+		draw_arc(center, radius - 5.0, 0.0, TAU, 48, Color(border, 0.58), 1.0, true)
 	if remaining > 0.0:
 		var sweep := TAU * clampf(remaining / maxf(0.1, duration), 0.0, 1.0)
 		draw_arc(center, radius - 4.0, -PI * 0.5, -PI * 0.5 + sweep, 64, accent, 2.8, true)
 		var countdown := "%.1f" % remaining if remaining < 1.0 else str(ceili(remaining))
 		_draw_centered(countdown, center + Vector2(0, 3), 24, TEXT)
-	elif short_on_resource:
+	elif not blocked.is_empty():
 		_draw_glyph(glyph, center - Vector2(0, 11), border)
-		var low_resource := "LOW %s" % _resource.to_upper()
-		_draw_centered(low_resource, center + Vector2(0, 7), 8, TEXT)
+		_draw_centered(blocked, center + Vector2(0, 7), 9, TEXT)
 	else:
 		_draw_glyph(glyph, center - Vector2(0, 7), accent.lightened(0.13) if held else accent)
 	_draw_button_label(label, center, radius, TEXT if not unavailable else TEXT.darkened(0.22))
 
 
 func _draw_button_label(label: String, center: Vector2, radius: float, tint: Color) -> void:
-	var font := ThemeDB.fallback_font
-	var max_width := radius * 1.64
-	if font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x <= max_width:
-		_draw_centered(label, center + Vector2(0, 23), 12, tint)
-		return
-	var first := ""
-	var second := ""
-	for word in label.split(" ", false):
-		var candidate := word if first.is_empty() else "%s %s" % [first, word]
-		if second.is_empty() and font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x <= max_width:
-			first = candidate
-		else:
-			second = word if second.is_empty() else "%s %s" % [second, word]
-	if first.is_empty():
-		first = second
-		second = ""
-	_draw_centered(_clip_label(first, max_width), center + Vector2(0, 18), 11, tint)
-	if not second.is_empty():
-		_draw_centered(_clip_label(second, max_width * 0.88), center + Vector2(0, 29), 11, tint)
+	if not _label_layouts.has(label):
+		_label_layouts[label] = _label_layout(label, radius)
+	var layout: Dictionary = _label_layouts[label]
+	var rows: PackedStringArray = layout.rows
+	var baseline := 22.0 if rows.size() == 1 else 19.0
+	for row in rows:
+		_draw_centered(row, center + Vector2(0.0, baseline), layout.font_size, tint)
+		baseline += 12.0
 
 
-func _clip_label(label: String, width: float) -> String:
+func _label_layout(label: String, radius: float) -> Dictionary:
 	var font := ThemeDB.fallback_font
-	if font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x <= width:
-		return label
-	while font.get_string_size(label + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x > width and not label.is_empty():
-		label = label.left(-1)
-	return label + "…"
+	var width := radius * 1.76
+	var words := label.split(" ", false)
+	for font_size in range(13, 9, -1):
+		if font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= width:
+			return {"rows": PackedStringArray([label]), "font_size": font_size}
+		for split in range(1, words.size()):
+			var first := " ".join(words.slice(0, split))
+			var second := " ".join(words.slice(split))
+			if font.get_string_size(first, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= radius * 1.72 and font.get_string_size(second, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= radius * 1.48:
+				return {"rows": PackedStringArray([first, second]), "font_size": font_size}
+	var short := label
+	while short.length() > 1 and font.get_string_size(short + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x > width:
+		short = short.left(-1)
+	return {"rows": PackedStringArray([short + "…"]), "font_size": 10}
 
 
 func _draw_centered(label: String, baseline: Vector2, font_size: int, tint: Color) -> void:
@@ -322,23 +354,28 @@ func _draw_diamond(center: Vector2, radius: float, tint: Color) -> void:
 	draw_colored_polygon(points, tint)
 
 
-func _draw_glyph(button: int, at: Vector2, tint: Color) -> void:
+func _draw_glyph(glyph: String, at: Vector2, tint: Color) -> void:
 	var points := PackedVector2Array()
-	match button:
-		0:
+	match glyph:
+		"basic":
 			points = PackedVector2Array([Vector2(-9, 10), Vector2(6, -12), Vector2(13, -14), Vector2(11, -6), Vector2(-5, 12)])
 			draw_line(at + Vector2(-12, 3), at + Vector2(2, 14), tint, 2.3, true)
-		1:
-			points = PackedVector2Array([Vector2(1, -15), Vector2(10, -4), Vector2(4, -5), Vector2(10, 6), Vector2(4, 12), Vector2(-6, 12), Vector2(-11, 5), Vector2(-7, -5), Vector2(-2, -2), Vector2(1, -15)])
-		2:
-			points = PackedVector2Array([Vector2(0, -13), Vector2(11, -8), Vector2(9, 4), Vector2(0, 12), Vector2(-9, 4), Vector2(-11, -8), Vector2(0, -13)])
-			_draw_diamond(at - Vector2(0, 1), 5.0, tint)
-		3:
-			points = PackedVector2Array([Vector2(0, -15), Vector2(4, -5), Vector2(13, -4), Vector2(6, 2), Vector2(8, 12), Vector2(0, 7), Vector2(-8, 12), Vector2(-6, 2), Vector2(-13, -4), Vector2(-4, -5), Vector2(0, -15)])
-		4:
+		"ally":
+			draw_circle(at, 12.0, Color(tint, 0.55), false, 1.5, true)
+			draw_line(at - Vector2(6, 0), at + Vector2(6, 0), tint, 2.7, true)
+			draw_line(at - Vector2(0, 6), at + Vector2(0, 6), tint, 2.7, true)
+		"self":
+			draw_circle(at, 11.0, tint, false, 2.0, true)
+			_draw_diamond(at, 4.3, tint)
+		"aim":
+			for index in 4:
+				var axis := Vector2.RIGHT.rotated(index * TAU / 4.0)
+				draw_line(at + axis * 7.0, at + axis * 13.0, tint, 2.0, true)
+			_draw_diamond(at, 4.1, tint)
+		"dodge":
 			points = PackedVector2Array([Vector2(-13, -7), Vector2(-5, 0), Vector2(-13, 7)])
 			draw_polyline(PackedVector2Array([at + Vector2(-1, -10), at + Vector2(10, 0), at + Vector2(-1, 10)]), tint, 2.8, true)
-		BREAK_FREE_GLYPH:
+		"break_free":
 			points = PackedVector2Array([Vector2(-3, 0), Vector2(-9, 0), Vector2(-13, 5), Vector2(-13, 9), Vector2(-9, 13), Vector2(-5, 13), Vector2(0, 8), Vector2(0, 4)])
 			var other_link := PackedVector2Array()
 			for point in points:
@@ -346,6 +383,13 @@ func _draw_glyph(button: int, at: Vector2, tint: Color) -> void:
 			draw_polyline(other_link, tint, 2.2, true)
 			draw_line(at + Vector2(-9, -7), at + Vector2(-6, -3), tint, 2.2, true)
 			draw_line(at + Vector2(7, 5), at + Vector2(11, 8), tint, 2.2, true)
+		_:
+			draw_arc(at, 11.0, 0.0, TAU, 24, tint, 1.8, true)
+			_draw_diamond(at, 3.2, tint)
+			draw_line(at + Vector2(-15, 0), at + Vector2(-9, 0), tint, 1.8, true)
+			draw_line(at + Vector2(9, 0), at + Vector2(15, 0), tint, 1.8, true)
+	if points.is_empty():
+		return
 	for index in points.size():
 		points[index] += at
 	draw_polyline(points, tint, 2.2, true)

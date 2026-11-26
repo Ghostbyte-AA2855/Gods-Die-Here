@@ -74,6 +74,7 @@ func _run() -> void:
 			_check(not class_poses.has(signature), "%s uses a distinct motion within its class." % ability.name)
 			class_poses[signature] = true
 			cast_shapes[signature] = true
+			_check(_cast_support_stays_above_floor(model, player), "%s / %s keeps its supporting boot above the floor." % [class_id, ability.name])
 
 		# Replay every accepted spell presentation through the handler used by the match.
 		arena_view._pawns[0] = pawn
@@ -156,6 +157,24 @@ func _verify_clip(model, player: AnimationPlayer, clip: String, label: String, l
 	var after := _pose(model.joints)
 	_check(start != middle or start != after, "%s %s moves actual model joints." % [label, clip])
 	return [start, middle, after]
+
+
+func _cast_support_stays_above_floor(model: Node3D, player: AnimationPlayer) -> bool:
+	var boots: Array[MeshInstance3D] = [
+		model.joints.foot_l.get_node("Sculpt"),
+		model.joints.foot_r.get_node("Sculpt"),
+	]
+	for sample in range(64):
+		player.seek(player.current_animation_length * sample / 64.0, true)
+		var sole := INF
+		for boot in boots:
+			var bounds := boot.get_aabb()
+			for corner in range(8):
+				var at := model.to_local(boot.to_global(bounds.get_endpoint(corner)))
+				sole = minf(sole, at.y)
+		if sole < -0.015:
+			return false
+	return true
 
 
 func _pose(joints: Dictionary) -> Array:
