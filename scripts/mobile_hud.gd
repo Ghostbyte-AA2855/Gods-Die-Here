@@ -11,17 +11,17 @@ const LobbyPreview = preload("res://scripts/champions/lobby_preview.gd")
 const MobileKits = preload("res://scripts/mobile_kits.gd")
 const Pantheon = preload("res://scripts/pantheon.gd")
 
-const INK := Color("#0f1016")
-const PANEL := Color("#1a1921")
-const CELL := Color("#242129")
-const LINE := Color("#4c3f3c")
+const INK := Color("#101214")
+const PANEL := Color("#17191c")
+const CELL := Color("#232325")
+const LINE := Color("#50443a")
 const IVORY := Color("#f6ead6")
 const MUTED := Color("#c3b5ae")
 const GOLD := Color("#e8be7d")
 const ALLY := Color("#a1d5cc")
 const FOE := Color("#f1a294")
-const TINT := Color("#341e25")
-const SLOT_LABELS := ["Basic attack", "Ability I", "Ability II", "Ability III"]
+const TINT := Color("#3a2b24")
+const SLOT_LABELS := ["Basic", "I", "II", "III"]
 const ARENA_FEATURES := {
 	"lockwater": "Rising tide",
 	"kiln": "Fire vents",
@@ -33,20 +33,14 @@ const ARENA_FEATURES := {
 
 class LobbyBackdrop extends Control:
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color("#100f14f5"))
-		for index in 14:
-			var ratio := float(index) / 13.0
-			var height := size.y * (1.0 - ratio) * 0.62
-			draw_rect(Rect2(0, size.y - height, size.x, height), Color(0.20, 0.085, 0.10, 0.033))
-		var center := Vector2(size.x * 0.5, size.y * 0.46)
-		for index in 6:
-			var width := size.x * (0.28 + 0.04 * index)
-			var height := size.y * (0.33 + 0.07 * index)
-			draw_polyline(PackedVector2Array([
-				center + Vector2(-width, 0), center + Vector2(0, -height),
-				center + Vector2(width, 0), center + Vector2(0, height),
-				center + Vector2(-width, 0),
-			]), Color(0.79, 0.54, 0.38, 0.08), 1.3, true)
+		draw_rect(Rect2(Vector2.ZERO, size), Color("#101215"))
+		for band in 16:
+			var height := (1.0 - float(band) / 16.0) * maxf(0.0, size.y - 94.0)
+			draw_rect(Rect2(0.0, size.y - height, size.x, height), Color(0.26, 0.12, 0.07, 0.024))
+		var middle := Vector2(size.x * 0.5, size.y * 0.60)
+		for arc in 4:
+			draw_arc(middle, 250.0 + arc * 54.0, PI, TAU, 72, Color(0.64, 0.49, 0.33, 0.15), 1.1, true)
+		draw_line(Vector2(20, 80), Vector2(size.x - 20, 80), Color(0.64, 0.49, 0.33, 0.26), 1.0)
 
 
 var root: Control
@@ -91,6 +85,9 @@ var _result_title: Label
 var _result_details: Label
 var _result_action: Button
 var _result_leave: Button
+var _result_fade: Tween
+var _last_feed := ""
+var _feed_until := 0
 
 
 func _ready() -> void:
@@ -120,12 +117,14 @@ func _build_lobby() -> void:
 	outer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "top", "right", "bottom"]:
 		outer.add_theme_constant_override("margin_" + side, 20)
-	var page := _column(outer, 12)
+	var page := _column(outer, 14)
 	var header := _row(page, 12)
 	var logo := _label("Gods Die Here", 43, IVORY, HORIZONTAL_ALIGNMENT_LEFT, true)
+	logo.add_theme_color_override("font_shadow_color", Color("#080808"))
+	logo.add_theme_constant_override("shadow_offset_y", 3)
 	logo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(logo)
-	var mode := _label("3v3 practice against bots", 22, GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
+	var mode := _label("3v3 practice against bots", 20, GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
 	mode.custom_minimum_size.x = 270
 	header.add_child(mode)
 
@@ -159,7 +158,7 @@ func _build_roster(roster: VBoxContainer) -> void:
 
 
 func _build_champion(parent: Control) -> void:
-	var stage := _panel(parent, Color("#201b23"), 6)
+	var stage := _panel(parent, Color("#1d1d1e"), 7)
 	stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stage.custom_minimum_size.x = 260
 	var column := _column(stage, 7)
@@ -173,8 +172,9 @@ func _build_champion(parent: Control) -> void:
 	column.add_child(champion_preview)
 	var caption := _column(column, 4)
 	caption.add_child(_label("Drag to rotate", 15, MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	_champion_label = _label("", 20, IVORY, HORIZONTAL_ALIGNMENT_CENTER, true)
+	_champion_label = _label("", 22, IVORY, HORIZONTAL_ALIGNMENT_CENTER, true)
 	_lore = _wrapped_label("", 17, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	_lore.custom_minimum_size.y = 40
 	caption.add_child(_champion_label)
 	caption.add_child(_lore)
 
@@ -211,7 +211,7 @@ func _build_ability_list() -> void:
 	_kit_panel.add_child(_label("Tap a move to preview its animation", 17, MUTED))
 	var selection := ButtonGroup.new()
 	for slot in SLOT_LABELS.size():
-		var button := _button("", 64, 20)
+		var button := _button("", 60, 20)
 		button.toggle_mode = true
 		button.button_group = selection
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -219,6 +219,7 @@ func _build_ability_list() -> void:
 		_kit_panel.add_child(button)
 		_ability_rows.append(button)
 	_ability_info = _wrapped_label("", 19, IVORY)
+	_ability_info.custom_minimum_size.y = 98
 	_kit_panel.add_child(_ability_info)
 
 
@@ -265,7 +266,7 @@ func _select_class(class_id: String) -> void:
 	var indexes: Array = MobileKits.slots(class_id)
 	for slot in indexes.size():
 		var ability: Dictionary = kit.abilities[indexes[slot]]
-		_ability_rows[slot].text = "%s\n%s" % [SLOT_LABELS[slot], ability.name]
+		_ability_rows[slot].text = "%s   ·   %s" % [SLOT_LABELS[slot], ability.name]
 		_ability_rows[slot].set_pressed_no_signal(false)
 	_refresh_ability(0)
 	_ability_rows[0].set_pressed_no_signal(true)
@@ -300,11 +301,12 @@ func _build_battlefield() -> void:
 	battlefield = _surface(root)
 	var top := _row(battlefield, 10)
 	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top.offset_left = 20
-	top.offset_top = 14
-	top.offset_right = -20
-	var vital_panel := _panel(top, Color("#16151de8"), 11)
-	vital_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.offset_left = 22
+	top.offset_top = 16
+	top.offset_right = -22
+	var vital_panel := _panel(top, Color("#181717ec"), 11)
+	vital_panel.custom_minimum_size.x = 316
+	vital_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	var vital := _column(vital_panel, 3)
 	_fighter_label = _label("", 21, IVORY)
 	vital.add_child(_fighter_label)
@@ -313,25 +315,29 @@ func _build_battlefield() -> void:
 	_resource_label = _label("", 15, MUTED)
 	vital.add_child(_resource_label)
 
-	var scoring := _panel(top, Color("#16151def"), 10)
-	scoring.custom_minimum_size.x = 260
-	var round_info := _column(scoring, 0)
-	_round_label = _label("", 16, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	_score_label = _label("", 24, GOLD, HORIZONTAL_ALIGNMENT_CENTER, true)
-	_time_label = _label("", 20, IVORY, HORIZONTAL_ALIGNMENT_CENTER)
+	_hud_space(top)
+	var scoring := _panel(top, Color("#171616eb"), 9)
+	scoring.custom_minimum_size.x = 246
+	scoring.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	var round_info := _column(scoring, 1)
+	_round_label = _label("", 14, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	_score_label = _label("", 23, GOLD, HORIZONTAL_ALIGNMENT_CENTER, true)
+	_time_label = _label("", 17, IVORY, HORIZONTAL_ALIGNMENT_CENTER)
 	round_info.add_child(_round_label)
 	round_info.add_child(_score_label)
 	round_info.add_child(_time_label)
 
-	var enemy_panel := _panel(top, Color("#16151de8"), 11)
-	enemy_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var enemy := _column(enemy_panel, 5)
-	enemy.add_child(_label("TARGET", 16, MUTED))
-	_target_label = _label("", 21, IVORY)
+	_hud_space(top)
+	var enemy_panel := _panel(top, Color("#181717ec"), 11)
+	enemy_panel.custom_minimum_size.x = 244
+	enemy_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	var enemy := _column(enemy_panel, 4)
+	enemy.add_child(_label("TARGET", 14, MUTED))
+	_target_label = _label("", 18, IVORY)
 	enemy.add_child(_target_label)
-	_target_bar = _meter(enemy, Color("#d98a7a"), 10)
-	_pause = _button("Ⅱ", 74, 29)
-	_pause.custom_minimum_size.x = 74
+	_target_bar = _meter(enemy, Color("#d98a7a"), 8)
+	_pause = _button("Ⅱ", 62, 26)
+	_pause.custom_minimum_size.x = 62
 	_pause.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	_pause.tooltip_text = "Pause match"
 	_pause.pressed.connect(func(): pause_pressed.emit())
@@ -341,10 +347,17 @@ func _build_battlefield() -> void:
 	messages.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	messages.offset_left = -360
 	messages.offset_right = 360
-	messages.offset_top = 116
+	messages.offset_top = 111
 	_hint = _battle_label(messages, 19, GOLD)
 	_notice = _battle_label(messages, 20, IVORY)
 	_feed = _battle_label(messages, 16, MUTED)
+
+
+func _hud_space(parent: Control) -> void:
+	var spacer := Control.new()
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(spacer)
 
 
 func _build_result() -> void:
@@ -378,15 +391,22 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 	lobby.visible = not in_match
 	champion_preview.set_active(not in_match)
 	battlefield.visible = in_match
-	result.visible = in_match and (quit_prompt or game.phase in ["round_over", "match_over"])
+	var show_result: bool = in_match and (quit_prompt or game.phase in ["round_over", "match_over"])
+	if result.visible != show_result:
+		_reveal_result(show_result, quit_prompt)
 	if not in_match:
+		_last_feed = ""
 		return
 	_pause.disabled = game.phase != "active" or quit_prompt
 	_round_label.text = "ROUND %d  /  FIRST TO %d" % [game.round_number, game.round_limit()]
 	_score_label.text = "%d   /   %d" % [game.wins[0], game.wins[1]]
 	var ring_suffix := "  ·  Ring closing" if game.safe_radius < ArenaMatch.ARENA_RADIUS else ""
 	_time_label.text = "%02d s%s" % [ceili(game.round_time), ring_suffix]
-	_feed.text = game.feed[0] if not game.feed.is_empty() and not result.visible else ""
+	var latest: String = game.feed[0] if not game.feed.is_empty() else ""
+	if latest != _last_feed:
+		_last_feed = latest
+		_feed_until = Time.get_ticks_msec() + 2600
+	_feed.text = latest if Time.get_ticks_msec() < _feed_until and not result.visible else ""
 	_hint.text = game.map_hint if not result.visible else ""
 	if not game.fighters.is_empty():
 		_update_vitals(game, target)
@@ -395,6 +415,19 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 	if result.visible:
 		_notice.text = ""
 		_update_result(game, quit_prompt)
+
+
+func _reveal_result(show_result: bool, paused: bool) -> void:
+	if _result_fade != null:
+		_result_fade.kill()
+	result.visible = show_result
+	if not show_result:
+		return
+	result.modulate.a = 0.0
+	_result_fade = result.create_tween()
+	if not paused:
+		_result_fade.tween_interval(0.26)
+	_result_fade.tween_property(result, "modulate:a", 1.0, 0.20).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _update_vitals(game: ArenaMatch, target: int) -> void:
@@ -406,7 +439,7 @@ func _update_vitals(game: ArenaMatch, target: int) -> void:
 	_resource_bar.value = fighter.get("meter", 0)
 	_resource_label.text = "%s  %d / 100" % [kit.resource, int(_resource_bar.value)]
 	_target_bar.visible = target >= 0 and target < game.fighters.size()
-	_target_label.text = "Automatic  ·  Tap a fighter"
+	_target_label.text = "Auto · Tap to lock"
 	_target_label.add_theme_color_override("font_color", MUTED)
 	if not _target_bar.visible:
 		return
@@ -421,7 +454,7 @@ func _update_result(game: ArenaMatch, quit_prompt: bool) -> void:
 	_result_leave.text = "Leave match" if quit_prompt else "Return to champions"
 	if quit_prompt:
 		_result_title.text = "Match paused"
-		_result_details.text = "The arena will wait."
+		_result_details.text = "%s  ·  Round %d" % [ArenaMaps.MAPS[game.map_id].name, game.round_number]
 		_result_action.text = "Resume match"
 	elif game.phase == "match_over":
 		_result_title.text = "Match won" if game.match_winner == 0 else "Match lost"
@@ -530,6 +563,8 @@ func _label(title: String, font_size: int, color: Color, alignment: HorizontalAl
 func _wrapped_label(title: String, font_size: int, color: Color, alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
 	var label := _label(title, font_size, color, alignment)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.clip_text = false
+	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	return label
 
 

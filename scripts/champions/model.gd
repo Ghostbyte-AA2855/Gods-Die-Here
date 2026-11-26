@@ -46,6 +46,9 @@ var _motion_velocity := Vector2.ZERO
 var _initialized_motion := false
 var _previous_health := 0.0
 var _previous_stun := false
+var _step_phase := 0.0
+var _playback_cadence := 1.0
+var _cast_recoil := 0.0
 
 
 func build(class_id: String, archetype: String) -> void:
@@ -89,6 +92,10 @@ func reset_motion() -> void:
 	_motion_velocity = Vector2.ZERO
 	_previous_stun = false
 	_locomotion = "idle"
+	_step_phase = 0.0
+	_playback_cadence = 1.0
+	_cast_recoil = 0.0
+	player.speed_scale = 1.0
 	player.play("idle")
 	player.seek(0.0, true)
 
@@ -103,47 +110,73 @@ func watch(fighter: Dictionary, delta: float) -> void:
 	if delta <= 0.0:
 		return
 	var distance := at - _previous_position
-	var velocity := distance / delta if distance.length_squared() < 7.0 else Vector2.ZERO
+	var velocity := (distance / delta).limit_length(11.0) if distance.length_squared() < 7.0 else Vector2.ZERO
 	_motion_velocity = _motion_velocity.lerp(velocity, 1.0 - exp(-18.0 * delta))
 	var facing: Vector2 = fighter.facing
 	var stunned: bool = fighter.stun > 0.0
-	_locomotion = "idle"
-	var cadence := 1.0
-	if _motion_velocity.length_squared() > 0.43:
-		var forward := facing.dot(_motion_velocity.normalized())
-		if forward < -0.45:
-			_locomotion = "backpedal"
-		elif forward >= 0.5:
-			_locomotion = "run"
-		else:
-			_locomotion = "strafe_right" if facing.cross(_motion_velocity) >= 0 else "strafe_left"
-		cadence = clampf(_motion_velocity.length() / 4.5, 0.55, 1.4)
+	_locomotion = _select_locomotion(facing)
+	var current := str(player.current_animation)
+	var locomoting := current in Animations.LOCOMOTION
+	var damage: float = _previous_health - health
+	if locomoting and current != "idle":
+		_step_phase = player.current_animation_position / player.current_animation_length
+	var cadence := clampf(_motion_velocity.length() / 3.70, 0.55, 1.58)
+	_playback_cadence = lerpf(_playback_cadence, cadence, 1.0 - exp(-13.0 * delta))
+	_cast_recoil = move_toward(_cast_recoil, 0.0, 5.7 * delta)
 	if stunned and not _previous_stun:
-		player.play("stagger", 0.035)
+		player.play("stagger", 0.027)
 	elif fighter.mend_time > 0 and not stunned:
-		if player.current_animation != "channel" and not str(player.current_animation).begins_with("cast_"):
+		if current != "channel" and not current.begins_with("cast_"):
 			player.play("channel", 0.07)
-	elif player.current_animation == "channel":
-		player.play(_locomotion, 0.07)
-	elif health <= _previous_health - 4.0 and str(player.current_animation) in ["idle","run","strafe_left","strafe_right","backpedal"]:
-		player.play("hit", 0.035)
-	elif player.current_animation.is_empty() or (str(player.current_animation) in ["idle","run","strafe_left","strafe_right","backpedal"] and player.current_animation != _locomotion):
-		player.play(_locomotion, 0.10)
-	var moving := str(player.current_animation) in ["run","strafe_left","strafe_right","backpedal"]
-	player.speed_scale = cadence if moving else 1.0
+	elif damage >= 4.0 and locomoting:
+		player.play("hit", 0.030)
+	elif current == "channel" or current.is_empty() or (locomoting and current != _locomotion):
+		_play_locomotion()
+	if damage >= 4.0 and current.begins_with("cast_"):
+		_cast_recoil = clampf(damage / 34.0, 0.12, 0.62)
+	var next := str(player.current_animation)
+	var moving := next in Animations.LOCOMOTION and next != "idle"
+	player.speed_scale = _playback_cadence if moving else 1.0
 	player.advance(delta)
+	if _cast_recoil > 0.0 and str(player.current_animation).begins_with("cast_"):
+		joints.spine.rotation.x += 0.21 * _cast_recoil
+		joints.head.rotation.x -= 0.26 * _cast_recoil
+		joints.mantle.rotation.z += 0.23 * _cast_recoil
 	_previous_stun = stunned
 	_previous_position = at
 	_previous_health = health
 
 
-func cast(slot: int) -> void:
+func _select_locomotion(facing: Vector2) -> String:
+	var threshold := 0.85 if _locomotion == "idle" else 0.49
+	if _motion_velocity.length_squared() <= threshold * threshold:
+		return "idle"
+	var forward := facing.dot(_motion_velocity.normalized())
+	if forward < (-0.32 if _locomotion == "backpedal" else -0.46):
+		return "backpedal"
+	if forward > (0.39 if _locomotion == "run" else 0.55):
+		return "run"
+	return "strafe_right" if facing.cross(_motion_velocity) >= 0 else "strafe_left"
+
+
+func _play_locomotion() -> void:
+	player.play(_locomotion, 0.115)
+	if _locomotion == "idle":
+		_step_phase = 0.0
+	else:
+		player.seek(_step_phase * player.current_animation_length, true)
+
+
+func cast(slot: int) -> float:
 	var name_of_clip := "cast_%d" % (slot + 1)
-	player.play(name_of_clip, 0.045)
+	if not player.has_animation(name_of_clip):
+		return 0.0
+	player.play(name_of_clip, 0.034)
 	player.speed_scale = 1.0
-	# The rules have already accepted the spell. Show its contact promptly.
-	var seconds := 0.0 if champion == "threadkeeper" and slot == 3 else Animations.visible_start(champion, slot)
+	_cast_recoil = 0.0
+	var seconds := Animations.visible_start(champion, slot)
 	player.seek(seconds, true)
+	return Animations.contact_time(champion, slot) - seconds
 
 
 func release_point(slot: int) -> Vector3:

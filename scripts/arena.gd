@@ -30,8 +30,10 @@ func _ready() -> void:
 	game.mobile_mode = mobile_mode
 	hud = MobileHud.new() if mobile_mode else ArenaHud.new()
 	add_child(audio_cues)
+	view.phone_camera = mobile_mode
 	add_child(view)
 	view.champion_fell.connect(audio_cues.elimination)
+	view.cast_released.connect(_cast_released)
 	add_child(hud)
 	hud.class_chosen.connect(_start)
 	hud.advance_pressed.connect(_continue_or_advance)
@@ -172,9 +174,11 @@ func _dodge_mobile() -> void:
 		return
 	if game.try_break_free():
 		view.flash_ability(0, -2, -1)
+		touch.cue(4)
 		_set_feedback("Break Free used")
 	elif game.try_dodge(_movement()):
 		view.flash_ability(0, -1, -1)
+		touch.cue(4)
 	else:
 		_set_feedback("Dodge unavailable")
 
@@ -236,6 +240,7 @@ func _cycle_target() -> void:
 
 
 func _start(class_id: String) -> void:
+	view.clear_casts()
 	selected_class = class_id
 	selected_target = -1
 	feedback_time = 0.0
@@ -250,6 +255,7 @@ func _start(class_id: String) -> void:
 
 func _advance() -> void:
 	if game.phase == "round_over":
+		view.clear_casts()
 		selected_target = -1
 		feedback_time = 0.0
 		game.next_round()
@@ -267,6 +273,7 @@ func _continue_or_advance() -> void:
 
 
 func _lobby() -> void:
+	view.clear_casts()
 	game = ArenaMatch.new()
 	game.mobile_mode = mobile_mode
 	last_seen_cast = 0
@@ -277,6 +284,7 @@ func _lobby() -> void:
 
 
 func _render() -> void:
+	view.presentation_paused = leave_prompt
 	if mobile_mode:
 		view.visible = game.phase != "idle"
 		var playing: bool = game.phase == "active" and not leave_prompt and game.fighters[0].alive
@@ -292,8 +300,14 @@ func _render() -> void:
 	if not game.cast_events.is_empty() and game.cast_events.back().seq > last_seen_cast:
 		for event in game.cast_events:
 			if event.seq > last_seen_cast:
+				audio_cues.windup(event)
 				view.play_cast(event)
-				audio_cues.cast(event)
 				last_seen_cast = event.seq
 	audio_cues.environment(game.map_id, game.environment_zones, game.phase == "active")
 	hud.update_match(game, selected_target, leave_prompt, feedback if feedback_time > 0.0 else "")
+
+
+func _cast_released(event: Dictionary) -> void:
+	audio_cues.cast(event)
+	if mobile_mode and event.source_id == 0:
+		touch.cue(mobile_slots.find(event.slot))

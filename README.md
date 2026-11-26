@@ -15,7 +15,9 @@ Pick a champion and an arena, then start the match. Each team has a guard, a hea
 | Tap a fighter or the arena floor | Lock onto a target or clear the lock. With no lock, enemies in line of sight and eligible allies are picked automatically. |
 | Tap Pause | Resume or return to the champion roster. |
 
-You can preview each of your four attacks and spells in the champion screen. The 16 champions use their existing models, animation clips, sound cues, and elimination effects in combat. The [pantheon](docs/pantheon.md) introduces each patron. The [arena guide](docs/arenas.md) covers cover, movement, and hazard warnings.
+You can preview the full-body animation for any of your four attacks and spells in the champion screen. The [pantheon](docs/pantheon.md) introduces each patron. The [arena guide](docs/arenas.md) explains cover, movement, and hazard warnings.
+
+The mobile camera tracks the fight as the teams close in and widens when they spread out. Each arena has its own surface materials, cover, and hazard markings. Cast effects and audio follow the champion's release pose. The results screen gives the final hit time to land before it fades in.
 
 ## Run from source
 

@@ -1,6 +1,7 @@
 extends Node3D
 
 signal champion_fell(local: bool)
+signal cast_released(event: Dictionary)
 
 const ChampionModel = preload("res://scripts/champions/model.gd")
 const EliminationFx = preload("res://scripts/elimination_fx.gd")
@@ -8,6 +9,8 @@ const ArenaStage = preload("res://scripts/arena_stage.gd")
 const CombatFx = preload("res://scripts/combat_fx.gd")
 const ARENA_RADIUS := 14.0
 const CAMERA_OFFSET := Vector3(0.0, 15.5, 13.5)
+const PHONE_CAMERA_NEAR := Vector3(0.0, 10.8, 11.9)
+const PHONE_CAMERA_WIDE := Vector3(0.0, 15.3, 14.6)
 const TEAM_COLORS := [Color("5ae1e8"), Color("ff9471")]
 const ArenaMatch = preload("res://scripts/arena_match.gd")
 const CLASS_COLORS := {
@@ -21,8 +24,21 @@ const CLASS_COLORS := {
 	"coilwright": Color("d4ac56"), "duskmoth": Color("bd8ab6"),
 }
 const EFFECT_COLORS := [Color("cbe8ff"), Color("ffd480"), Color("af9cff"), Color("8af1bd")]
+const ARENA_LIGHT := {
+	"lockwater": [Color("111e29"), Color("ffd4a4"), Color("72b9e4")],
+	"kiln": [Color("251718"), Color("ffce9d"), Color("a399ce")],
+	"orchard": [Color("121c1b"), Color("ffe8bd"), Color("86bbab")],
+	"quarry": [Color("251d19"), Color("ffd4a4"), Color("a4b9e1")],
+	"observatory": [Color("181929"), Color("ffe1c1"), Color("9fa8f4")],
+}
 
 var blood_enabled := true
+var phone_camera := false
+var presentation_paused := false:
+	set(value):
+		if value != presentation_paused:
+			presentation_paused = value
+			process_mode = Node.PROCESS_MODE_DISABLED if value else Node.PROCESS_MODE_INHERIT
 var _eliminations := EliminationFx.new()
 var _impact := 0.0
 var _impact_axis := Vector3.ZERO
@@ -31,11 +47,19 @@ var _fx := CombatFx.new()
 var _camera: Camera3D
 var _camera_focus := Vector3.ZERO
 var _wanted_focus := Vector3.ZERO
+var _camera_spread := 1.0
+var _wanted_spread := 1.0
 var _floor_ring: MeshInstance3D
 var _floor_ring_material: StandardMaterial3D
 var _pawns: Dictionary = {}
 var _previous_phase := ""
 var _field_rings: Array[MeshInstance3D] = []
+var _pending_casts: Array[Dictionary] = []
+var _environment: Environment
+var _key_light: DirectionalLight3D
+var _rim_light: DirectionalLight3D
+var _lighting_map := ""
+var _vignette: ColorRect
 
 
 func _ready() -> void:
@@ -51,18 +75,39 @@ func _ready() -> void:
 	add_child(_camera)
 	_camera.look_at(Vector3.ZERO)
 	_camera.current = true
+	if phone_camera:
+		_add_vignette()
 
 
 func _process(delta: float) -> void:
+	if presentation_paused:
+		return
 	_camera_focus = _camera_focus.lerp(_wanted_focus, 1.0 - exp(-5.0 * delta))
-	_impact = move_toward(_impact, 0.0, delta * 1.5)
-	_camera.position = CAMERA_OFFSET + _camera_focus + _impact_axis * _impact
+	_impact = move_toward(_impact, 0.0, delta * 2.4)
+	var offset := CAMERA_OFFSET
+	if phone_camera:
+		_camera_spread = lerpf(_camera_spread, _wanted_spread, 1.0 - exp(-3.5 * delta))
+		offset = PHONE_CAMERA_NEAR.lerp(PHONE_CAMERA_WIDE, _camera_spread)
+		_camera.fov = lerpf(44.0, 51.0, _camera_spread)
+	_camera.position = offset + _camera_focus + _impact_axis * _impact
 	_camera.look_at(_camera_focus)
+	var index := 0
+	while index < _pending_casts.size():
+		var cast: Dictionary = _pending_casts[index]
+		cast.remaining -= delta
+		if cast.remaining > 0.0:
+			index += 1
+			continue
+		_pending_casts.remove_at(index)
+		_release_cast(cast)
 
 
 func set_state(fighters: Array[Dictionary], safe_radius: float, selected_target: int, phase: String, fields: Array = []) -> void:
-	if phase == "idle" or (phase == "active" and _previous_phase != "active"):
+	if phase != _previous_phase and phase in ["idle", "active"]:
 		_eliminations.clear()
+		_camera_spread = 1.0
+		if _vignette != null:
+			_vignette.visible = phase == "active"
 	var active_fighters: Dictionary = {}
 	for fighter in fighters:
 		active_fighters[fighter["id"]] = fighter
@@ -94,21 +139,27 @@ func set_state(fighters: Array[Dictionary], safe_radius: float, selected_target:
 				_impact = 0.23
 				_impact_axis = Vector3(facing.x, 0.14, facing.y)
 		piece.visible = alive
-		if facing.length_squared() > 0.01:
-			rig.rotation.y = atan2(-facing.x, -facing.y)
+		if facing.length_squared() > 0.01 and not presentation_paused:
+			var face_angle := atan2(-facing.x, -facing.y)
+			if phone_camera and _previous_phase == "active":
+				rig.rotation.y = rotate_toward(rig.rotation.y, face_angle, get_process_delta_time() * 22.0)
+			else:
+				rig.rotation.y = face_angle
 		if alive:
 			if _previous_phase != "active" and phase == "active":
 				pawn.model.reset_motion()
-			pawn.model.watch(fighter, get_process_delta_time() if phase == "active" else 0.0)
+			pawn.model.watch(fighter, get_process_delta_time() if phase == "active" and not presentation_paused else 0.0)
 		fill.scale.x = maxf(0.001, health_ratio)
 		fill.position.x = -(1.24 * (1.0 - health_ratio)) / 2.0
 		selection.visible = fighter_id == selected_target
+		if phone_camera:
+			pawn.nameplate.visible = fighter_id == 0 or fighter_id == selected_target
 		_update_status(pawn, fighter, active_fighters, phase == "active")
-		if _previous_phase == "active":
-			if health < previous_health:
-				_float_amount(piece.position, roundi(previous_health - health), Color("ffcfbb"))
-			elif health > previous_health and previous_health > 0.0:
-				_float_amount(piece.position, roundi(health - previous_health), Color("aaf2c6"))
+		if _previous_phase == "active" and previous_health > 0.0:
+			var change := roundi(health - previous_health)
+			var show_change := not phone_camera or (fighter_id in [0, selected_target] and absi(change) >= 4)
+			if change != 0 and show_change:
+				_float_amount(piece.position, absi(change), Color("ffcfbb") if change < 0 else Color("aaf2c6"))
 		pawn["health"] = health
 
 		if fighter_id == 0:
@@ -121,6 +172,8 @@ func set_state(fighters: Array[Dictionary], safe_radius: float, selected_target:
 
 	if fighters.is_empty():
 		_wanted_focus = Vector3.ZERO
+	elif phone_camera:
+		_frame_phone_action(fighters, selected_target)
 	var radius := clampf(safe_radius, 0.5, ARENA_RADIUS)
 	_floor_ring.visible = phase == "active" and radius < ARENA_RADIUS - 0.01
 	_floor_ring.scale = Vector3(radius, 1.0, radius)
@@ -131,23 +184,90 @@ func set_state(fighters: Array[Dictionary], safe_radius: float, selected_target:
 
 func set_stage(map_id: String, terrain: Array, zones: Array) -> void:
 	_stage.set_map(map_id, terrain, zones)
+	if map_id != _lighting_map:
+		_lighting_map = map_id
+		var palette: Array = ARENA_LIGHT.get(map_id, ARENA_LIGHT.lockwater)
+		_environment.background_color = palette[0]
+		_environment.fog_light_color = palette[0].lightened(0.09)
+		_key_light.light_color = palette[1]
+		_rim_light.light_color = palette[2]
 
 
 func play_cast(event: Dictionary) -> void:
 	var source: Dictionary = _pawns.get(event.source_id, {})
-	var presentation := event
+	var cast := {"event": event, "remaining": 0.0, "hand": Vector3.UP, "source": null}
 	if not source.is_empty() and source.node.visible:
-		source.model.cast(event.slot)
-		presentation = event.duplicate()
-		var point: Vector3 = source.model.release_point(event.slot)
-		# A dash can move the parent before its cast event reaches the client view.
-		var offset: Vector3 = point - source.node.global_position
-		presentation.hand_origin = Vector3(event.origin.x, 0, event.origin.y) + offset
+		cast.remaining = float(source.model.cast(event.slot))
+		cast.source = source.node
+		cast.hand = source.model.release_point(event.slot) - source.node.global_position
+	if cast.remaining <= 0.0:
+		_release_cast(cast)
+		return
+	# Bound pending effects if a long frame delivers many combat events together.
+	if _pending_casts.size() >= 24:
+		_release_cast(_pending_casts.pop_front())
+	var windup := event.duplicate()
+	windup.hand_origin = _event_origin(event) + cast.hand
+	_fx.play_windup(windup, cast.remaining)
+	_pending_casts.append(cast)
+
+
+func clear_casts() -> void:
+	_pending_casts.clear()
+	_fx.clear()
+	_impact = 0.0
+
+
+func _release_cast(cast: Dictionary) -> void:
+	var event: Dictionary = cast.event
+	var presentation := event.duplicate()
+	var hand: Vector3 = cast.hand
+	var source: Dictionary = _pawns.get(event.source_id, {})
+	if is_instance_valid(cast.source) and source.get("node") == cast.source and cast.source.visible:
+		if source.model.player.current_animation == "cast_%d" % (event.slot + 1):
+			hand = source.model.release_point(event.slot) - cast.source.global_position
+	# Preserve the cast origin even if the rig has dashed to its destination.
+	presentation.hand_origin = _event_origin(event) + hand
 	_fx.play_cast(presentation)
+	cast_released.emit(event)
 	if event.source_id == 0 and not event.get("affected_ids", []).is_empty() and event.slot != 0:
 		var direction: Vector2 = event.destination - event.origin
 		_impact_axis = Vector3(direction.normalized().x, 0.24, direction.normalized().y)
-		_impact = 0.18 if event.slot == 7 else 0.085
+		_impact = 0.24 if event.slot == 7 else 0.085
+
+
+func _event_origin(event: Dictionary) -> Vector3:
+	return Vector3(event.origin.x, 0.0, event.origin.y)
+
+
+func _frame_phone_action(fighters: Array[Dictionary], selected_target: int) -> void:
+	var human: Dictionary = fighters[0]
+	var anchor: Vector2 = human.position
+	var encounter := Vector2.ZERO
+	var living_center_sum := Vector2.ZERO
+	var count := 0
+	var living := 0
+	var farthest := 0.0
+	for fighter in fighters:
+		if not fighter.alive:
+			continue
+		var point: Vector2 = fighter.position
+		var distance := anchor.distance_to(point)
+		farthest = maxf(farthest, distance)
+		living_center_sum += point
+		living += 1
+		if distance < 10.5:
+			encounter += point
+			count += 1
+	if count > 0:
+		anchor = anchor.lerp(encounter / float(count), 0.34 if human.alive else 0.75)
+	_wanted_spread = smoothstep(5.2, 17.0, farthest)
+	if living > 0:
+		anchor = anchor.lerp(living_center_sum / float(living), _wanted_spread * 0.86)
+	if selected_target >= 0 and selected_target < fighters.size() and fighters[selected_target].alive:
+		var direction: Vector2 = fighters[selected_target].position - anchor
+		anchor += direction.limit_length(6.0) * 0.26
+	_wanted_focus = Vector3(clampf(anchor.x, -8.7, 8.7), 0.56, clampf(anchor.y, -7.5, 7.5))
 
 
 func movement_vector(screen_movement: Vector2) -> Vector2:
@@ -286,29 +406,57 @@ func _free_pawn(pawn: Dictionary) -> void:
 
 func _build_lighting() -> void:
 	var world_environment := WorldEnvironment.new()
-	var settings := Environment.new()
-	settings.background_mode = Environment.BG_COLOR
-	settings.background_color = Color("17111d")
-	settings.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	settings.ambient_light_color = Color("a493b2")
-	settings.ambient_light_energy = 0.75
-	settings.fog_enabled = true
-	settings.fog_light_color = Color("2e1d33")
-	settings.fog_density = 0.012
-	world_environment.environment = settings
+	_environment = Environment.new()
+	_environment.background_mode = Environment.BG_COLOR
+	_environment.background_color = Color("161521")
+	_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	_environment.ambient_light_color = Color("a2abc2")
+	_environment.ambient_light_energy = 0.58
+	_environment.fog_enabled = true
+	_environment.fog_light_color = Color("282333")
+	_environment.fog_density = 0.015
+	_environment.fog_sky_affect = 0.0
+	world_environment.environment = _environment
 	add_child(world_environment)
 
-	var key := DirectionalLight3D.new()
-	key.rotation_degrees = Vector3(-52.0, -32.0, 0.0)
-	key.light_color = Color("ffe0b7")
-	key.light_energy = 1.0
-	key.shadow_enabled = true
-	add_child(key)
-	var fill := DirectionalLight3D.new()
-	fill.rotation_degrees = Vector3(-30.0, 148.0, 0.0)
-	fill.light_color = Color("75a8eb")
-	fill.light_energy = 0.45
-	add_child(fill)
+	_key_light = DirectionalLight3D.new()
+	_key_light.rotation_degrees = Vector3(-48.0, -40.0, 0.0)
+	_key_light.light_color = Color("ffe0b7")
+	_key_light.light_energy = 1.21
+	_key_light.shadow_enabled = true
+	_key_light.directional_shadow_max_distance = 40.0
+	if phone_camera:
+		_key_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	add_child(_key_light)
+	_rim_light = DirectionalLight3D.new()
+	_rim_light.rotation_degrees = Vector3(-29.0, 143.0, 0.0)
+	_rim_light.light_color = Color("75a8eb")
+	_rim_light.light_energy = 0.69
+	add_child(_rim_light)
+
+
+func _add_vignette() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 0
+	add_child(layer)
+	_vignette = ColorRect.new()
+	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_vignette)
+	_vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_vignette.hide()
+	var shader := Shader.new()
+	shader.code = """
+		shader_type canvas_item;
+		render_mode unshaded;
+		void fragment() {
+			vec2 at = (UV - vec2(0.50, 0.48)) * vec2(1.60, 1.36);
+			float falloff = smoothstep(0.44, 1.02, length(at));
+			COLOR = vec4(0.034, 0.025, 0.042, falloff * 0.49);
+		}
+	"""
+	var shade := ShaderMaterial.new()
+	shade.shader = shader
+	_vignette.material = shade
 
 
 func _create_pawn(fighter_id: int, class_id: String, team: int, health: float) -> Dictionary:
@@ -341,7 +489,9 @@ func _create_pawn(fighter_id: int, class_id: String, team: int, health: float) -
 
 	var top := _label(piece, Vector3(0.0, 2.76, 0.0), str(ArenaMatch.CLASS_INFO[class_id].name).to_upper(), team_color, 0.0056)
 	if fighter_id == 0:
-		top.text += "  /  YOU"
+		top.text = "YOU" if phone_camera else top.text + "  /  YOU"
+	if phone_camera:
+		top.pixel_size = 0.0072
 	var status_label := _label(piece, Vector3(0, 3.06, 0), "", Color("f2dca9"), 0.0051)
 	var bar_back := _material(Color("141a24"), Color.BLACK, true)
 	bar_back.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
@@ -352,7 +502,7 @@ func _create_pawn(fighter_id: int, class_id: String, team: int, health: float) -
 	return {
 		"node": piece, "rig": rig, "model": model, "fill": fill, "selection": selection, "health": health,
 		"class_id": class_id, "trail": trail, "guard_link": guard_link, "brace": brace,
-		"wound": wound, "mending": mend, "status_label": status_label,
+		"wound": wound, "mending": mend, "status_label": status_label, "nameplate": top,
 	}
 
 

@@ -38,6 +38,7 @@ var _stick_offset := Vector2.ZERO
 var _fighter: Dictionary = {}
 var _slots: Array = []
 var _resource := ""
+var _cue_until: PackedInt64Array = [0, 0, 0, 0, 0]
 
 
 func _ready() -> void:
@@ -73,7 +74,14 @@ func reset() -> void:
 	_stick_offset = Vector2.ZERO
 	direction = Vector2.ZERO
 	attack_held = false
+	_cue_until.fill(0)
 	queue_redraw()
+
+
+func cue(button: int) -> void:
+	if button >= 0 and button < _cue_until.size():
+		_cue_until[button] = Time.get_ticks_msec() + 230
+		queue_redraw()
 
 
 func _notification(what: int) -> void:
@@ -243,13 +251,18 @@ func _draw_button(button: int) -> void:
 	elif button > 0:
 		label = "Skill %d" % button
 	var unavailable := remaining > 0.0 or short_on_resource
+	var flare := clampf((_cue_until[button] - Time.get_ticks_msec()) / 230.0, 0.0, 1.0)
 	var border := accent.darkened(0.42) if unavailable else accent
-	if held:
-		border = accent.lightened(0.42)
+	if held or flare > 0.0:
+		border = accent.lightened(maxf(flare * 0.5, 0.22 if held else 0.0))
 	draw_circle(center + Vector2(0, 3), radius + 4.0, Color(0.02, 0.02, 0.03, 0.7), true, -1.0, true)
 	draw_circle(center, radius, INK.lerp(accent, 0.26 if held else 0.06), true, -1.0, true)
+	draw_circle(center - Vector2(0, 1), radius - 4.0, Color(accent, 0.035 + 0.18 * flare), true, -1.0, true)
 	draw_arc(center, radius, 0.0, TAU, 64, border, 2.5 if held else 2.0, true)
+	draw_arc(center, radius + 1.5, -2.64, -0.5, 28, Color(border, 0.45), 1.5, true)
 	draw_arc(center, radius - 5.5, -2.66, -0.48, 24, Color(border, 0.6), 1.0, true)
+	if flare > 0.0:
+		draw_arc(center, radius + 2.0 + (1.0 - flare) * 9.0, 0.0, TAU, 40, Color(accent.lightened(0.35), flare * 0.7), 2.0, true)
 	_draw_diamond(center - Vector2(0, radius - 2.0), 3.8, border)
 	if remaining > 0.0:
 		var sweep := TAU * clampf(remaining / maxf(0.1, duration), 0.0, 1.0)
@@ -267,7 +280,7 @@ func _draw_button(button: int) -> void:
 
 func _draw_button_label(label: String, center: Vector2, radius: float, tint: Color) -> void:
 	var font := ThemeDB.fallback_font
-	var max_width := radius * 1.5
+	var max_width := radius * 1.64
 	if font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x <= max_width:
 		_draw_centered(label, center + Vector2(0, 23), 12, tint)
 		return

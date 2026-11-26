@@ -4,104 +4,25 @@ const ArenaMaps = preload("res://scripts/arena_maps.gd")
 
 # Court tint, tile seams, substructure, trim, surrounding terrain.
 const PALETTES = {
-	"lockwater": ["515c65", "34424a", "35434c", "97805a", "193746"],
-	"kiln": ["79544a", "412e2e", "402f34", "ad7054", "36292c"],
-	"orchard": ["60784d", "364b36", "566047", "b49558", "425541"],
-	"quarry": ["77756c", "4b504c", "575e59", "aa9772", "505a55"],
-	"observatory": ["4a4a67", "30344c", "3d3b55", "bca27a", "242d43"],
+	"lockwater": ["39494c", "1b2428", "293b41", "877050", "1c343e"],
+	"kiln": ["4d3936", "211d22", "3e2d30", "976c48", "302329"],
+	"orchard": ["424b39", "262c2b", "37382d", "807655", "27362c"],
+	"quarry": ["504e43", "272723", "42433e", "988560", "373932"],
+	"observatory": ["38394f", "202234", "2e2c43", "a68b64", "23263a"],
 }
 const STYLES = {"lockwater": 0, "kiln": 1, "orchard": 2, "quarry": 3, "observatory": 4}
 const ZONE_PATTERNS = {"vent": 0, "wind": 1, "rise": 2, "veil": 3, "tide": 4}
 const ACTIVE_TINTS = {"vent": Color("ff743e"), "wind": Color("a1e9d4"), "rise": Color("eee2b2"), "veil": Color("bf9cff"), "tide": Color("65bfdc")}
 
-# Patterns are drawn on the flat walkable mesh so painted floor detail cannot be
-# mistaken for extra colliders. Coordinates use metres on the arena surface.
-const FLOOR_SHADER = """
-shader_type spatial;
-uniform vec4 base : source_color;
-uniform vec4 seam : source_color;
-uniform int design;
-varying vec2 tile_pos;
-void vertex() { tile_pos = VERTEX.xz; }
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 4375.85); }
-void fragment() {
-	vec2 p = tile_pos;
-	vec3 c = base.rgb;
-	if (design < 2) {
-		vec2 cell = p / (design == 0 ? vec2(2.45, 1.13) : vec2(1.55, 0.78));
-		cell.x += mod(floor(cell.y), 2.0) * 0.5;
-		vec2 edge = min(fract(cell), 1.0-fract(cell));
-		float inset = smoothstep(0.004, 0.027, min(edge.x, edge.y));
-		c = mix(seam.rgb, base.rgb * (0.91+0.18*hash(floor(cell))), inset);
-	} else if (design == 2) {
-		float path = min(abs(p.x*0.65+p.y*0.76+0.6*sin(p.x*0.39)), abs(-p.x*0.65+p.y*0.76-0.6*sin(p.x*0.39)));
-		c = mix(base.rgb * vec3(1.32, 0.89, 0.62), base.rgb, smoothstep(0.6, 1.7, path));
-		vec2 tuft = floor(p * 3.0);
-		c *= 0.91 + 0.15*hash(tuft);
-	} else if (design == 3) {
-		float vein = abs(fract(p.y*0.37+p.x*0.18+0.07*sin(p.x*1.2)+0.12*sin(p.y*0.6))-0.5);
-		c = mix(base.rgb, seam.rgb, 0.65*(1.0-smoothstep(0.005,0.022,vein)));
-		c *= 0.96 + 0.09*hash(floor(vec2(p.y+p.x*0.5, p.x*0.45)));
-	} else {
-		vec2 cell = fract(p/vec2(3.4,3.4));
-		float edge = min(min(cell.x,1.0-cell.x),min(cell.y,1.0-cell.y));
-		c = mix(seam.rgb,base.rgb,smoothstep(0.0,0.008,edge));
-		float r = length(p);
-		float ring = min(abs(r-5.3),min(abs(r-8.0),abs(r-11.8)));
-		c = mix(c, vec3(0.38,0.33,0.22), 0.8*(1.0-smoothstep(0.017,0.036,ring)));
-	}
-	ALBEDO = c;
-	ROUGHNESS = 0.88;
-}
-"""
-
-# Fill stays translucent at all phases. Directional chevrons point along the
-# shared wind vector; other patterns remain distinct when viewed in grayscale.
-const ZONE_SHADER = """
-shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never;
-uniform vec4 tint : source_color;
-uniform int kind;
-uniform int phase;
-uniform vec2 flow;
-uniform float until_change;
-void fragment() {
-	vec2 p = UV * 2.0 - 1.0;
-	float d = length(p);
-	if (d > 1.0) { discard; }
-	float rim = smoothstep(0.91, 0.97, d);
-	float ink = 0.0;
-	if (kind == 0) {
-		ink = 1.0-smoothstep(0.03,0.09,abs(fract(3.25*p.y+0.22*sin(8.0*p.x))-0.5));
-	} else if (kind == 1) {
-		vec2 axis = length(flow) > 0.001 ? normalize(flow) : vec2(1.0,0.0);
-		float along = dot(p, axis);
-		float across = dot(p, vec2(-axis.y,axis.x));
-		ink = (1.0-smoothstep(0.045,0.12,abs(fract(2.0*(along+abs(across)))-0.5))) *
-			(1.0-smoothstep(0.36,0.46,abs(across)));
-	} else if (kind == 2) {
-		float rib = abs(fract(2.6*(p.y+abs(p.x)))-0.5);
-		ink = (1.0-smoothstep(0.06,0.12,rib)) * (1.0-smoothstep(0.53,0.7,abs(p.x)));
-	} else if (kind == 3) {
-		ink = 1.0-smoothstep(0.025,0.05,abs(length(p-vec2(0.21,-0.10))-0.53));
-	} else {
-		ink = 1.0-smoothstep(0.045,0.12,abs(fract(2.2*p.y+0.22*sin(6.0*p.x))-0.5));
-	}
-	float warning_ring = (1.0-smoothstep(0.025,0.064,abs(d-(0.2+0.65*fract(until_change*0.7)))));
-	if (phase == 1) { ink = max(ink*0.5, warning_ring); }
-	float edge = smoothstep(0.0,0.03,1.0-d);
-	ALBEDO = tint.rgb;
-	ALPHA = edge * (phase == 0 ? (0.025+rim*0.20+ink*0.09) : (0.12+rim*0.65+ink*0.35));
-}
-"""
+const COURT_SHADER := preload("res://scripts/stage/court_surface.gdshader")
+const SURROUND_SHADER := preload("res://scripts/stage/surroundings.gdshader")
+const ZONE_SHADER := preload("res://scripts/stage/hazard.gdshader")
 
 var _map_id := ""
 var _scenery: Node3D
 var _covers: Dictionary = {}
 var _zone_nodes: Dictionary = {}
 var _materials: Dictionary = {}
-var _floor_shader := Shader.new()
-var _zone_shader := Shader.new()
 
 
 func set_map(map_id: String, terrain: Array, environment_zones: Array) -> void:
@@ -142,9 +63,6 @@ func _change_scenery(selected: String) -> void:
 	if _scenery:
 		_scenery.hide()
 		_scenery.queue_free()
-	else:
-		_floor_shader.code = FLOOR_SHADER
-		_zone_shader.code = ZONE_SHADER
 	_retire_absent(_covers, {})
 	_retire_absent(_zone_nodes, {})
 	_map_id = selected
@@ -153,11 +71,18 @@ func _change_scenery(selected: String) -> void:
 	add_child(_scenery)
 	var palette: Array = PALETTES[selected]
 	var base := ShaderMaterial.new()
-	base.shader = _floor_shader
+	base.shader = COURT_SHADER
 	base.set_shader_parameter("base", Color(palette[0]))
 	base.set_shader_parameter("seam", Color(palette[1]))
+	base.set_shader_parameter("inlay", Color(palette[3]))
 	base.set_shader_parameter("design", STYLES[selected])
-	_box(_scenery, Vector3(0,-0.72,0), Vector3(92,0.3,90), _mat(palette[4]))
+	var ground := ShaderMaterial.new()
+	ground.shader = SURROUND_SHADER
+	ground.set_shader_parameter("base", Color(palette[4]))
+	ground.set_shader_parameter("design", STYLES[selected])
+	var outskirts := PlaneMesh.new()
+	outskirts.size = Vector2(92, 96)
+	_mesh(_scenery, Vector3(0, -0.83, 0), outskirts, ground).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var perimeter: PackedVector2Array = ArenaMaps.outline(selected)
 	_build_platform(perimeter, base, _mat(palette[2]), _mat(palette[3]))
 	match selected:
@@ -166,6 +91,8 @@ func _change_scenery(selected: String) -> void:
 		"orchard": _orchard()
 		"quarry": _quarry()
 		"observatory": _observatory()
+	_build_perimeter_props(perimeter, palette)
+	_batch_props(_scenery)
 
 
 # All court footprints are convex and counterclockwise in simulation XY.
@@ -212,15 +139,94 @@ func _quad_strip(surface: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Ve
 		_vertex(surface, point, normal)
 
 
+func _build_perimeter_props(outline: PackedVector2Array, palette: Array) -> void:
+	var trim := _mat(palette[3], false, 0.32)
+	var stone := _mat(palette[2])
+	var paint := _mat(palette[1])
+	var curved_boundary := _map_id in ["lockwater", "observatory"]
+	var around := 16 if curved_boundary else outline.size() * 2
+	var stride := outline.size() / around if curved_boundary else 1
+	for index in around:
+		var entry := index if curved_boundary else index / 2
+		var base := outline[entry * stride]
+		var next := outline[(entry * stride + 1) % outline.size()]
+		if not curved_boundary and index % 2 == 1:
+			base = base.lerp(next, 0.5)
+		var angle := atan2(base.x, base.y)
+		var radial := Vector3(sin(angle), 0, cos(angle))
+		var center := Vector3(base.x, 0.0, base.y)
+		var step_center := center + radial * 0.90
+		step_center.y = -0.33
+		var edge := _box(_scenery, step_center, Vector3(1.91, 0.34, 1.73), stone)
+		edge.rotation.y = angle
+		var inset := _box(_scenery, center - radial * 0.54 + Vector3.UP * 0.008, Vector3(0.38, 0.023, 0.10), trim)
+		inset.rotation.y = angle
+		if index % 2 != 0:
+			continue
+		var post_center := center + radial * 1.52 - Vector3.UP * 0.62
+		_cone(_scenery, post_center + Vector3.UP * 0.36, 0.41, 0.53, 0.72, stone, 6)
+		_cone(_scenery, post_center + Vector3.UP * 0.76, 0.51, 0.42, 0.15, trim, 6)
+		if index % 4 == 0:
+			_perimeter_beacon(post_center + Vector3.UP * 0.84, trim, paint)
+
+
+func _perimeter_beacon(point: Vector3, frame: Material, body: Material) -> void:
+	var color: String = {
+		"lockwater": "76b7b5", "kiln": "c86c3a", "orchard": "d2a46b",
+		"quarry": "c49d55", "observatory": "aa91d6",
+	}[_map_id]
+	var lamp := _mat(color, true)
+	_cone(_scenery, point + Vector3.UP * 0.057, 0.21, 0.34, 0.12, body, 8)
+	_cone(_scenery, point + Vector3.UP * 0.22, 0.23, 0.18, 0.25, lamp, 6)
+	_cone(_scenery, point + Vector3.UP * 0.40, 0.12, 0.30, 0.18, frame, 6)
+	for i in 3:
+		var angle := i * TAU / 3.0
+		var support := Vector3(cos(angle) * 0.22, 0.21, sin(angle) * 0.22)
+		_box(_scenery, point + support, Vector3(0.052, 0.30, 0.052), frame)
+
+
+# Architecture and covers are rigid. Combining their parts by material keeps
+# the detailed geometry to a handful of draw calls on the WebGL renderer.
+func _batch_props(parent: Node3D) -> void:
+	var source_nodes := parent.find_children("*", "MeshInstance3D", true, false)
+	var surfaces: Dictionary = {}
+	var unbaked: Array[MeshInstance3D] = []
+	var parent_inverse := parent.global_transform.affine_inverse()
+	for source: Node in source_nodes:
+		var part := source as MeshInstance3D
+		var material := part.material_override
+		if not material is StandardMaterial3D or String(part.name).begins_with("Court"):
+			continue
+		if not surfaces.has(material):
+			var batch := SurfaceTool.new()
+			batch.begin(Mesh.PRIMITIVE_TRIANGLES)
+			surfaces[material] = batch
+		var batch: SurfaceTool = surfaces[material]
+		for index in part.mesh.get_surface_count():
+			batch.append_from(part.mesh, index, parent_inverse * part.global_transform)
+		unbaked.append(part)
+	for material: StandardMaterial3D in surfaces:
+		var batch: SurfaceTool = surfaces[material]
+		_mesh(parent, Vector3.ZERO, batch.commit(), material)
+	for part in unbaked:
+		part.free()
+
+
 func _gatehouse() -> void:
-	var stone := _mat("364450")
-	var trim := _mat("75838a")
-	var wood := _mat("70554a")
-	var iron := _mat("344a50")
+	var stone := _mat("2b3945")
+	var trim := _mat("546972", false, 0.34)
+	var wood := _mat("4e3831")
+	var iron := _mat("2a4147", false, 0.58)
 	for side: float in [-1.0, 1.0]:
 		var tower := Vector3(6.5*side,0,-16.5)
 		_box(_scenery,tower+Vector3.UP*1.65,Vector3(3.0,3.3,2.5),stone)
 		_box(_scenery,tower+Vector3.UP*3.35,Vector3(3.3,0.28,2.75),trim)
+		for band_index in [0.45, 1.03, 2.71]:
+			_box(_scenery, tower + Vector3.UP * band_index, Vector3(3.12, 0.075, 2.61), trim)
+		for support in [-1.0, 1.0]:
+			var face := tower + Vector3(support * 1.20, 0.0, 1.33)
+			_box(_scenery, face + Vector3.UP * 1.14, Vector3(0.37, 2.28, 0.43), stone)
+			_box(_scenery, face + Vector3.UP * 2.21, Vector3(0.41, 0.14, 0.49), trim)
 		for notch in [-1,0,1]:
 			_box(_scenery,tower+Vector3(notch,3.68,1.06),Vector3(0.58,0.55,0.5),stone)
 		_box(_scenery,tower+Vector3(0,2.25,1.28),Vector3(0.83,1.45,0.09),_mat("447a83" if side < 0 else "976948"))
@@ -243,15 +249,20 @@ func _gatehouse() -> void:
 
 
 func _furnaces() -> void:
-	var iron := _mat("43383a")
-	var copper := _mat("ab7459")
-	var fire := _mat("ffac55",true)
+	var iron := _mat("392e34", false, 0.48)
+	var copper := _mat("935f45", false, 0.55)
+	var fire := _mat("e58c41", true)
 	for index in range(-2,3):
 		var x := index*5.8
 		var z := -17.0 - absi(index%2)*0.9
 		_cone(_scenery,Vector3(x,1.4,z),1.85,2.45,3.5,iron,12)
 		_cone(_scenery,Vector3(x,4.65,z),1.03,1.51,3.0,_mat("634840"),12)
 		_cone(_scenery,Vector3(x,6.25,z),1.17,1.17,0.38,copper,12)
+		_cone(_scenery, Vector3(x, 3.17, z), 1.57, 1.69, 0.16, copper, 12)
+		_cone(_scenery, Vector3(x, 4.28, z), 1.40, 1.44, 0.16, copper, 12)
+		for support in [-1.0, 1.0]:
+			_box(_scenery, Vector3(x + support * 1.09, 1.17, z + 1.8), Vector3(0.23, 2.05, 0.42), copper)
+		_box(_scenery, Vector3(x, 0.19, z + 2.31), Vector3(2.57, 0.25, 1.18), iron)
 		_box(_scenery,Vector3(x,1.04,z+1.84),Vector3(1.5,1.03,0.25),fire)
 		for bar in [-1,0,1]:
 			_box(_scenery,Vector3(x+bar*0.41,1.04,z+2.0),Vector3(0.14,1.14,0.2),iron)
@@ -263,14 +274,12 @@ func _furnaces() -> void:
 
 
 func _orchard() -> void:
-	var timber := _mat("69533e")
-	for index in 13:
-		var angle := deg_to_rad(74.0 + index*17.6)
-		var p := Vector3(sin(angle),0,cos(angle))*(17.4+float(index%2)*1.7)
-		_cone(_scenery,p+Vector3.UP*1.2,0.36,0.58,3.15,timber,7)
-		var foliage := _mat(["8c9950","ba8848","aa6644"][index%3])
-		_cone(_scenery,p+Vector3.UP*3.15,1.45,2.1,1.65,foliage,7)
-		_cone(_scenery,p+Vector3(0.24,4.3,-0.12),0.45,1.62,1.35,foliage,7)
+	var timber := _mat("464035")
+	for index in 12:
+		var angle := deg_to_rad(71.0 + index * 21.0)
+		var point := Vector3(sin(angle), -0.04, cos(angle)) * (16.5 + float(index % 2) * 1.9)
+		var foliage := _mat(["414c39", "5f563d", "624a35"][index % 3])
+		_ironwood(_scenery, point, 2.7 + float(index % 4) * 0.40, timber, foliage)
 	var rotor := Vector3(-1.5,4.0,-17.4)
 	_cone(_scenery,rotor-Vector3.UP*2.4,0.67,1.25,4.8,_mat("8e7758"),6)
 	var hub := Node3D.new()
@@ -291,13 +300,13 @@ func _orchard() -> void:
 
 
 func _quarry() -> void:
-	var face := _mat("696a60")
+	var face := _mat("434742")
 	for tier in range(3):
 		var distance := 17.4 + tier*2.0
 		for cut in range(-3,4):
 			var point := Vector3(cut*4.6, tier*0.91,-distance-absf(cut)*0.18)
 			_box(_scenery,point,Vector3(4.56,1.8+tier*0.72,3.5),face)
-			_box(_scenery,point+Vector3.UP*(0.77+tier*0.36),Vector3(4.59,0.16,3.53),_mat("939180"))
+			_box(_scenery,point+Vector3.UP*(0.77+tier*0.36),Vector3(4.59,0.16,3.53),_mat("716953"))
 	var wood := _mat("755943")
 	for side: float in [-1.0,1.0]:
 		_box(_scenery,Vector3(8.0+side*1.25,2.3,-15.5),Vector3(0.43,5.0,0.5),wood)
@@ -310,14 +319,18 @@ func _quarry() -> void:
 
 
 func _observatory() -> void:
-	var brass := _mat("ac946b")
-	var indigo := _mat("43465e")
+	var brass := _mat("8c714e", false, 0.51)
+	var indigo := _mat("34394b")
 	var armillary := Vector3(0,4.0,-17.5)
 	_cone(_scenery,armillary-Vector3.UP*2.66,1.55,2.4,2.8,indigo,12)
 	for i in 3:
 		var hoop := _ring(_scenery,armillary,2.7-i*0.25,2.83-i*0.25,brass)
 		hoop.rotation = Vector3(0.28+i*0.54,0.4+i*0.83,0.25+i*0.46)
-	_cone(_scenery,armillary,0.12,0.38,0.9,_mat("ccc3ef",true),6)
+	_cone(_scenery,armillary,0.12,0.38,0.9,_mat("9982d0",true),6)
+	for i in 8:
+		var angle := i * TAU / 8.0
+		var p := armillary + Vector3(cos(angle) * 2.7, 0.07, sin(angle) * 2.7)
+		_cone(_scenery, p, 0.048, 0.091, 0.20, brass, 6)
 	for side: float in [-1.0,1.0]:
 		var p := Vector3(side*9.2,0,-17.7)
 		_cone(_scenery,p+Vector3.UP*1.2,1.95,2.35,2.75,indigo,12)
@@ -332,41 +345,163 @@ func _observatory() -> void:
 
 func _make_cover(id: String, style: String) -> Node3D:
 	var cover := Node3D.new()
-	cover.name = "Cover_"+id
+	cover.name = "Cover_" + id
 	add_child(cover)
 	var body := _mat(PALETTES[_map_id][2])
-	var trim := _mat(PALETTES[_map_id][3])
+	var trim := _mat(PALETTES[_map_id][3], false, 0.45)
 	match style:
 		"tree":
-			_cone(cover,Vector3.UP*0.34,0.58,0.97,0.68,_mat("705642"),9)
-			_cone(cover,Vector3.UP*0.73,0.69,1.0,0.30,_mat("7d924d"),8)
-			_cone(cover,Vector3(0.13,0.91,-0.10),0.36,0.72,0.18,_mat("b69052"),8)
-		"rock","slab":
-			_cone(cover,Vector3.UP*0.33,0.90,1.0,0.66,body,8)
-			_cone(cover,Vector3.UP*0.69,0.88,0.94,0.08,trim,8)
-			_cone(cover,Vector3.UP*0.86,0.64,0.88,0.27,_mat("828279"),8)
+			_ironwood(cover, Vector3.ZERO, 1.0, _mat("584a37"), _mat("4d5840"))
+		"rock", "slab":
+			_stratified_rock(cover, body, style == "slab")
 		"chimney":
-			_cone(cover,Vector3.UP*0.49,0.70,0.98,0.98,body,12)
-			for y: float in [0.23,0.70]:
-				_cone(cover,Vector3.UP*y,0.94-y*0.2,0.96-y*0.2,0.08,trim,12)
-			_ring(cover,Vector3.UP*0.98,0.50,0.69,_mat("dc864f",true))
+			_furnace_cover(cover, body, trim)
 		"lens":
-			_cone(cover,Vector3.UP*0.23,0.78,0.98,0.46,body,10)
-			_cone(cover,Vector3.UP*0.52,0.64,0.87,0.13,trim,10)
-			_cone(cover,Vector3.UP*0.68,0.72,0.36,0.24,_mat("9ba8c6"),6)
-			_cone(cover,Vector3.UP*0.90,0.11,0.72,0.20,_mat("b6b9d8"),6)
+			_lens_cover(cover, body, trim)
 		_:
-			_cone(cover,Vector3.UP*0.13,0.98,1.0,0.26,body,12)
-			_cone(cover,Vector3.UP*0.59,0.80,0.87,0.66,body,12)
-			_cone(cover,Vector3.UP*0.94,0.95,0.95,0.12,trim,12)
+			_pier_cover(cover, body, trim)
+	_batch_props(cover)
 	return cover
+
+
+func _pier_cover(cover: Node3D, body: Material, trim: Material) -> void:
+	var wet_stone := _mat("374f54")
+	var black_iron := _mat("252d35", false, 0.68)
+	_cone(cover, Vector3.UP * 0.09, 0.97, 1.0, 0.18, wet_stone, 8)
+	_cone(cover, Vector3.UP * 0.51, 0.71, 0.81, 0.86, body, 8)
+	_cone(cover, Vector3.UP * 0.92, 0.88, 0.88, 0.14, trim, 8)
+	_cone(cover, Vector3.UP * 0.998, 0.77, 0.88, 0.021, wet_stone, 8)
+	for index in 4:
+		var angle := PI * 0.5 * index + PI * 0.25
+		var axis := Vector3(sin(angle), 0, cos(angle))
+		var iron := _box(cover, axis * 0.67 + Vector3.UP * 0.48, Vector3(0.095, 0.67, 0.19), black_iron)
+		iron.rotation.y = angle
+		_cone(cover, axis * 0.66 + Vector3.UP * 1.018, 0.056, 0.080, 0.028, black_iron, 6)
+	_ring(cover, Vector3.UP * 1.015, 0.30, 0.36, trim)
+
+
+func _furnace_cover(cover: Node3D, body: Material, trim: Material) -> void:
+	var soot := _mat("282228")
+	var iron := _mat("45404a", false, 0.6)
+	var core := _mat("a9632c", true)
+	_cone(cover, Vector3.UP * 0.09, 0.88, 1.0, 0.18, iron, 10)
+	_cone(cover, Vector3.UP * 0.51, 0.70, 0.87, 0.88, body, 10)
+	_cone(cover, Vector3.UP * 0.66, 0.79, 0.82, 0.055, iron, 10)
+	_cone(cover, Vector3.UP * 0.965, 0.81, 0.76, 0.11, trim, 10)
+	_cone(cover, Vector3.UP * 1.022, 0.68, 0.81, 0.025, soot, 10)
+	_cone(cover, Vector3.UP * 1.037, 0.46, 0.46, 0.016, core, 10)
+	for n in 5:
+		var chord := sqrt(0.56 * 0.56 - pow(n * 0.20 - 0.40, 2.0)) * 1.84
+		_box(cover, Vector3(n * 0.20 - 0.40, 1.063, 0), Vector3(0.063, 0.036, chord), iron)
+	for n in 6:
+		var angle := n * TAU / 6.0
+		var axis := Vector3(sin(angle), 0, cos(angle))
+		var brace := _box(cover, axis * 0.75 + Vector3.UP * 0.51, Vector3(0.105, 0.61, 0.15), iron)
+		brace.rotation.y = angle
+		_cone(cover, axis * 0.70 + Vector3.UP * 1.054, 0.043, 0.054, 0.022, trim, 5)
+
+
+func _lens_cover(cover: Node3D, body: Material, trim: Material) -> void:
+	var steel := _mat("515269", false, 0.50)
+	var purple := _mat("7062af", true)
+	var plum := _mat("403867", false, 0.42)
+	_cone(cover, Vector3.UP * 0.11, 0.94, 1.0, 0.22, steel, 10)
+	_cone(cover, Vector3.UP * 0.38, 0.62, 0.84, 0.40, body, 10)
+	_cone(cover, Vector3.UP * 0.58, 0.80, 0.62, 0.10, trim, 10)
+	_cone(cover, Vector3.UP * 0.66, 0.50, 0.69, 0.11, steel, 10)
+	_cone(cover, Vector3.UP * 0.77, 0.56, 0.29, 0.18, purple, 7)
+	_cone(cover, Vector3(0.12, 0.946, 0.0), 0.06, 0.56, 0.19, plum, 7)
+	_ring(cover, Vector3.UP * 0.78, 0.79, 0.84, trim).rotation = Vector3(0.40, 0, -0.24)
+	for n in 4:
+		var angle := n * TAU / 4.0
+		var axis := Vector3(sin(angle), 0, cos(angle))
+		_cone(cover, axis * 0.59 + Vector3.UP * 0.63, 0.085, 0.135, 0.21, trim, 5)
+		_cone(cover, axis * 0.68 + Vector3.UP * 0.155, 0.07, 0.12, 0.10, purple, 6)
+
+
+func _stratified_rock(cover: Node3D, face: Material, slab: bool) -> void:
+	var cap := _mat("62605a")
+	var fissure := _mat("25272a")
+	var mineral := _mat("837256" if slab else "66665c")
+	var width := 1.0 if slab else 0.84
+	_rock_column(cover, Vector3.ZERO, [Vector2(0.0, 1.0), Vector2(0.25, width * 0.94), Vector2(0.61, width), Vector2(0.92, width * 0.72), Vector2(1.0, width * 0.50)], face, 0.13)
+	_rock_column(cover, Vector3.ZERO, [Vector2(0.21, width * 0.99), Vector2(0.245, width * 0.98)], mineral, 0.13, false)
+	_rock_column(cover, Vector3.ZERO, [Vector2(0.578, width * 1.02), Vector2(0.60, width * 1.025)], fissure, 0.13, false)
+	_rock_column(cover, Vector3.ZERO, [Vector2(0.606, width * 1.026), Vector2(0.638, width * 0.99)], mineral, 0.13, false)
+	_rock_column(cover, Vector3.ZERO, [Vector2(0.90, width * 0.75), Vector2(0.985, width * 0.55), Vector2(1.008, width * 0.49)], cap, 0.13)
+
+
+# An irregular annulus of planar faces reads as broken bedrock. Each
+# Vector2 defines a section height and its approximate unit-radius outline.
+func _rock_column(parent: Node3D, at: Vector3, sections: Array, material: Material, twist: float, with_cap := true) -> void:
+	const EDGES := 9
+	var rings: Array[PackedVector3Array] = []
+	for section: Vector2 in sections:
+		var ring := PackedVector3Array()
+		for i in EDGES:
+			var angle := i * TAU / EDGES + twist * section.x
+			var fracture := 0.84 + 0.15 * sin(i * 2.1 + 0.81) * sin(i * 2.1 + 0.81)
+			var offset := 0.08 * section.x
+			ring.append(Vector3(cos(angle) * section.y * fracture + offset, section.x, sin(angle) * section.y * fracture - offset * 0.42))
+		rings.append(ring)
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	surface.set_smooth_group(-1)
+	for index in rings.size() - 1:
+		for i in EDGES:
+			var next := (i + 1) % EDGES
+			for v: Vector3 in [rings[index][i], rings[index][next], rings[index + 1][next], rings[index][i], rings[index + 1][next], rings[index + 1][i]]:
+				surface.set_uv(Vector2(v.x + v.z, v.y))
+				surface.add_vertex(v)
+	if with_cap:
+		var top := rings.back() as PackedVector3Array
+		for i in EDGES:
+			for v: Vector3 in [Vector3(top[0].y * 0.08, top[0].y, 0), top[i], top[(i + 1) % EDGES]]:
+				surface.set_uv(Vector2(v.x, v.z))
+				surface.add_vertex(v)
+	surface.generate_normals()
+	_mesh(parent, at, surface.commit(), material)
+
+
+func _ironwood(parent: Node3D, at: Vector3, scale_factor: float, timber: Material, foliage: Material) -> void:
+	var tree := Node3D.new()
+	tree.position = at
+	tree.scale = Vector3.ONE * scale_factor
+	parent.add_child(tree)
+	var bark := _mat("353337")
+	var dry := _mat("6c5740")
+	_cone(tree, Vector3.UP * 0.25, 0.24, 0.44, 0.53, timber, 7).rotation.z = -0.09
+	_cone(tree, Vector3(0.02, 0.66, -0.06), 0.096, 0.25, 0.51, bark, 7).rotation.z = 0.08
+	for i in 5:
+		var angle := i * TAU / 5.0 + 0.30
+		var axis := Vector3(sin(angle), 0, cos(angle))
+		_branch(tree, axis * 0.09 + Vector3.UP * 0.14, axis * 0.85 + Vector3.UP * 0.008, 0.040, 0.135, timber)
+		_branch(tree, axis * 0.10 + Vector3.UP * (0.43 + float(i % 3) * 0.04), axis * 0.70 + Vector3.UP * (0.80 + float(i % 3) * 0.035), 0.038, 0.11, timber)
+		if i % 2 == 0:
+			var crown := axis * 0.32 + Vector3.UP * (0.78 - float(i % 3) * 0.032)
+			_leaves(tree, crown, 0.43, foliage)
+			_leaves(tree, crown + axis * 0.28 + Vector3.UP * 0.045, 0.27, foliage if i != 0 else dry)
+	_leaves(tree, Vector3(-0.07, 0.86, 0.04), 0.40, foliage)
+
+
+func _leaves(tree: Node3D, at: Vector3, width: float, foliage: Material) -> void:
+	_rock_column(tree, at, [
+		Vector2(0.0, width * 0.67), Vector2(0.072, width), Vector2(0.17, width * 0.74),
+		Vector2(0.22, width * 0.33), Vector2(0.24, width * 0.05),
+	], foliage, 0.71)
+
+
+func _branch(parent: Node3D, from: Vector3, to: Vector3, top: float, bottom: float, material: Material) -> void:
+	var delta := to - from
+	var limb := _cone(parent, (from + to) * 0.5, top, bottom, delta.length(), material, 6)
+	limb.quaternion = Quaternion(Vector3.UP, delta.normalized())
 
 
 func _make_zone(id: String, kind: String) -> MeshInstance3D:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(2,2)
 	var material := ShaderMaterial.new()
-	material.shader = _zone_shader
+	material.shader = ZONE_SHADER
 	material.set_shader_parameter("kind",ZONE_PATTERNS.get(kind,0))
 	var node := _mesh(self,Vector3.ZERO,plane,material)
 	node.name = "Zone_"+id
@@ -394,16 +529,17 @@ func _lantern(parent: Node3D, p: Vector3) -> void:
 	_box(parent,p+Vector3.UP*1.8,Vector3(0.33,0.1,0.33),_mat("344a50"))
 
 
-func _mat(code: String, glow := false) -> StandardMaterial3D:
-	var key := code+"+" if glow else code
+func _mat(code: String, glow := false, metal := 0.02) -> StandardMaterial3D:
+	var key := "%s/%d/%.2f" % [code, int(glow), metal]
 	if not _materials.has(key):
 		var material := StandardMaterial3D.new()
 		material.albedo_color = Color(code)
-		material.roughness = 0.85
+		material.metallic = metal
+		material.roughness = lerpf(0.89, 0.43, metal)
 		if glow:
 			material.emission_enabled = true
 			material.emission = Color(code)
-			material.emission_energy_multiplier = 0.48
+			material.emission_energy_multiplier = 0.68
 		_materials[key] = material
 	return _materials[key]
 

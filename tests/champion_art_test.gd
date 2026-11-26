@@ -104,10 +104,23 @@ func _verify_live_cast() -> void:
 	arena.game.fighters[0].position = Vector2.ZERO
 	arena.game.fighters[3].position = Vector2(0, 1.0)
 	arena._render()
+	var releases: Array[int] = []
+	arena.view.cast_released.connect(func(event: Dictionary): releases.append(event.seq))
 	_check(arena.game.try_ability(0, 3), "Strike is accepted by the match rules.")
 	arena._render()
 	var player: AnimationPlayer = arena.view._pawns[0].model.player
 	_check(player.current_animation == "cast_1", "An accepted live Strike animates its champion.")
+	_check(arena.view._pending_casts.size() == 1 and releases.is_empty(), "Renders the windup before releasing Strike effects and sound.")
+	arena.view.presentation_paused = true
+	arena.view._process(0.2)
+	_check(releases.is_empty(), "A paused arena holds pending cast presentation.")
+	arena.view.presentation_paused = false
+	arena.view._process(0.2)
+	arena.view._process(0.2)
+	_check(releases == [arena.game.cast_events.back().seq], "Strike releases the effect and audio signal exactly once.")
+	_check(arena.game.try_ability(1), "Brace can wind up before a scene transition.")
+	arena._render()
+	_check(arena.view._pending_casts.size() == 1, "The second cast is waiting to release.")
 	arena.game._apply_damage(arena.game.fighters[3], 1000)
 	arena._render()
 	var effects: Node3D = arena.view._eliminations
@@ -120,6 +133,8 @@ func _verify_live_cast() -> void:
 	arena._lobby()
 	arena._render()
 	_check(effects.get_child_count() == 0, "Leaving the match clears eliminated champions.")
+	arena.view._process(0.2)
+	_check(arena.view._pending_casts.is_empty() and releases.size() == 1, "Leaving a match discards queued cast presentation.")
 	arena.queue_free()
 	await process_frame
 

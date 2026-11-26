@@ -251,37 +251,55 @@ static func sample(class_id: String, slot: int, normalized_time: float) -> Dicti
 	var lead: int = clip[3]
 	var force: float = clip[4]
 	var t := clampf(normalized_time, 0.0, 1.0)
-	var windup := contact * 0.55
-	# The stitch channel keeps working, while impact gestures release their
-	# weight faster. The longer retraction is important for heavy weapons.
-	var settle := 0.79 if family == "threadwork" else 0.53 + contact * 0.37
-	var anticipation := _pose(gesture, family, lead, clip[5], clip[6], -1)
-	var impact := _pose(gesture, family, lead, clip[5], clip[6], 0)
+	var timing := beats(clip)
+	var loaded := _pose(gesture, family, lead, clip[5], clip[6], -1)
+	var contact_pose := _pose(gesture, family, lead, clip[5], clip[6], 0)
 	var follow := _pose(gesture, family, lead, clip[5], clip[6], 1)
+	var pose := _body_pose(t, timing, loaded, contact_pose, follow)
+	# Free ends lag the body and are still catching up during the recovery.
+	var drift := _body_pose(maxf(t - 0.063 * sin(t * PI), 0.0), timing, loaded, contact_pose, follow)
+	var echo := sin(smoothstep(contact, 0.95, t) * 2.0 * PI) * smoothstep(contact, timing.z, t)
+	pose["mantle"] = drift.mantle + Vector3(-11.0, 7.0 * lead, -8.0 * lead) * echo
+	pose["ornament"] = drift.ornament + Vector3(8.0, -13.0 * lead, 11.0 * lead) * echo
+	var offset: Vector3 = pose.offset
+	for name in pose:
+		pose[name] = (pose[name] as Vector3) * (PI / 180.0) * force
+	pose["offset"] = offset * force
+	return pose
+
+
+static func beats(clip: Array) -> Vector3:
+	var contact: float = clip[2]
+	var family: String = clip[0]
+	var follow := 0.73 if family == "threadwork" else contact + 0.12 + 0.09 * float(clip[4])
+	return Vector3(contact * 0.52, contact, follow)
+
+
+static func _body_pose(t: float, timing: Vector3, loaded: Dictionary, contact: Dictionary, follow: Dictionary) -> Dictionary:
 	var from: Dictionary
 	var to: Dictionary
 	var mix: float
-	if t <= windup:
+	if t <= timing.x:
 		from = {}
-		to = anticipation
-		mix = smoothstep(0.0, windup, t)
-	elif t <= contact:
-		from = anticipation
-		to = impact
-		mix = pow(inverse_lerp(windup, contact, t), 1.45)
-	elif t <= settle:
-		from = impact
+		to = loaded
+		mix = smoothstep(0.0, timing.x, t)
+	elif t <= timing.y:
+		from = loaded
+		to = contact
+		mix = pow(inverse_lerp(timing.x, timing.y, t), 1.70)
+	elif t <= timing.z:
+		from = contact
 		to = follow
-		mix = 1.0 - pow(1.0 - inverse_lerp(contact, settle, t), 2.1)
+		mix = 1.0 - pow(1.0 - inverse_lerp(timing.y, timing.z, t), 2.6)
 	else:
 		from = follow
 		to = {}
-		mix = smoothstep(settle, 1.0, t)
+		mix = smoothstep(timing.z, 1.0, t)
 	var pose := {}
-	for name: String in impact:
+	for name: String in contact:
 		var start: Vector3 = from.get(name, Vector3.ZERO)
 		var finish: Vector3 = to.get(name, Vector3.ZERO)
-		pose[name] = start.lerp(finish, mix) * (PI / 180.0) * force
+		pose[name] = start.lerp(finish, mix)
 	return pose
 
 
@@ -301,6 +319,10 @@ static func _pose(gesture: Array, family: String, side: int, pitch: float, yaw: 
 	var bow := family.begins_with("draw")
 	var swing := family in ["cleave", "hew", "wheel", "windmill", "throw_hook", "toll"]
 	var brace := family in ["shield", "mirror", "cradle", "hold_high", "threadwork"]
+	var travel := family in ["charge", "lunge", "surf", "kick", "rewind", "evade"]
+	var grounded := family in ["hew", "plant", "kneel", "toll"]
+	var width := 0.09 if grounded or travel else 0.058
+	var weight_shift := Vector3(width * side, -compression * 0.00185, -0.15 if travel else -0.077)
 	var leg_forward := compression * (0.80 if kick else 0.48)
 	var leg_back := compression * 0.36
 	var tilt := 4.0 * side
@@ -308,17 +330,22 @@ static func _pose(gesture: Array, family: String, side: int, pitch: float, yaw: 
 	if phase == -1:
 		var draw_back := 14.0 if bow else anticipation
 		lead_pitch = lead_pitch * (0.86 if bow else 0.54) - draw_back
+		if family == "hew":
+			lead_pitch = 120.0
+			lead_elbow -= 13.0
 		off_pitch *= 0.74
 		lead_roll *= -0.58
 		off_roll *= 0.51
 		lead_elbow += 24.0
 		off_elbow *= 0.79
 		wrist *= -0.42
-		lean = -lean * 0.44
-		torso_turn *= -0.61
+		lean = -lean * 0.56
+		torso_turn = -torso_turn * 0.68 - (14.0 * side if swing else 0.0)
 		compression *= 0.73
 		back_sweep = -18.0
 		leg_forward *= 0.58
+		leg_back *= 1.65
+		weight_shift = Vector3(-0.69 * width * side, weight_shift.y * 0.69, 0.083 if travel or grounded else 0.047)
 	elif phase == 1:
 		var hold := 0.92 if brace else 0.54
 		lead_pitch = lead_pitch * hold - (16.0 if swing else 0.0)
@@ -328,11 +355,16 @@ static func _pose(gesture: Array, family: String, side: int, pitch: float, yaw: 
 		lead_elbow = lead_elbow * 0.83 + 25.0
 		off_elbow *= 0.74
 		wrist *= 0.69
-		lean *= 0.55
-		torso_turn *= 1.11 if swing else 0.54
-		compression *= 0.57
-		back_sweep = 21.0 if swing else 9.0
+		lean *= 1.15 if grounded else 0.55
+		torso_turn = torso_turn * (1.11 if swing else 0.54) + (19.0 * side if swing else 0.0)
+		compression *= 0.85 if grounded else 0.57
+		back_sweep = 27.0 if swing else 9.0
 		leg_forward *= 0.73
+		weight_shift *= 1.32 if grounded or swing else 0.55
+	elif family == "hew":
+		lead_pitch = 69.0
+		lead_elbow *= 0.54
+		lean += 6.0
 	if kick and phase == 0:
 		leg_forward = 72.0 if pitch < -15.0 else 56.0
 		compression *= 0.39
@@ -346,6 +378,7 @@ static func _pose(gesture: Array, family: String, side: int, pitch: float, yaw: 
 	var upper_off_yaw := torso_turn * (0.43 if bow else 0.17)
 	var head_yaw := -torso_turn * (0.76 if bow else 0.49)
 	return {
+		"offset": weight_shift,
 		"pelvis": Vector3(-lean * 0.29, torso_turn * 0.28, tilt * 0.39),
 		"spine": Vector3(-lean * 0.71, torso_turn * 0.61, tilt * 0.58),
 		"head": Vector3(lean * 0.37, head_yaw, -tilt * 0.56),
