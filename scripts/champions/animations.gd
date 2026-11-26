@@ -148,7 +148,7 @@ static func _react(motion: String, at: float, archetype: String, offset: float, 
 		"death":
 			var fall := smoothstep(0.03, 0.84, at)
 			return {
-				"offset":Vector3(end_pose[1] * .36 * fall, -0.68 * fall, signf(-end_pose[0]) * .47 * fall),
+				"offset":Vector3(end_pose[1] * .36 * fall, -0.88 * fall, signf(-end_pose[0]) * .47 * fall),
 				"pelvis":Vector3(end_pose[0] * fall, end_pose[2] * .49 * fall, end_pose[1] * fall),
 				"spine":Vector3(-0.27 * pound, -0.36 * fall, end_pose[2] * .54 * fall),
 				"head":Vector3(-0.45 * pound, 0.32 * fall, 0.44 * fall),

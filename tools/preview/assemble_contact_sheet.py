@@ -6,12 +6,12 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-INK = "#e6d8bd"
-EMBER = "#d49365"
-MUTED = "#a89baf"
-CARD = "#1c1721"
-EDGE = "#453344"
-GROUND = "#0e0c12"
+INK = "#e7e1d4"
+EMBER = "#c78c6b"
+MUTED = "#ababaa"
+CARD = "#171717"
+EDGE = "#393531"
+GROUND = "#111010"
 FONT_ROOT = Path("/usr/share/fonts/truetype/dejavu")
 
 
@@ -28,30 +28,31 @@ def main():
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     roster = json.loads((args.directory / "champions.json").read_text())
-    margin, gap, cell, render_height, row_height = 34, 17, 390, 352, 449
-    header = 172
+    margin, gap, cell = 32, 20, 396
+    render_height, row_height = cell, cell + 90
+    header = 155
     panel = Image.new("RGB", (2 * margin + 4 * cell + 3 * gap,
                              header + 4 * row_height + 3 * gap + margin), GROUND)
     draw = ImageDraw.Draw(panel)
-    title = font("DejaVuSerif-Bold.ttf", 53)
+    title = font("DejaVuSerif-Bold.ttf", 56)
     subtitle = font("DejaVuSans.ttf", 22)
     name = font("DejaVuSerif-Bold.ttf", 22)
-    role = font("DejaVuSans-Bold.ttf", 13)
+    role = font("DejaVuSans-Bold.ttf", 14)
     patron = font("DejaVuSans.ttf", 16)
-    draw.text((margin, 28), "GODS DIE HERE", font=title, fill=INK)
-    draw.text((margin + 2, 101), "The sixteen champions   /   game meshes rendered with studio lighting",
+    draw.text((margin, 22), "GODS DIE HERE", font=title, fill=INK)
+    draw.text((margin + 2, 100), "The sixteen champions  /  rendered from the game models",
               font=subtitle, fill=MUTED)
-    draw.line((margin, 142, panel.width - margin, 142), fill=EDGE, width=2)
+    draw.line((margin, 134, panel.width - margin, 134), fill=EDGE, width=2)
 
     for index, champion in enumerate(roster):
         x = margin + (index % 4) * (cell + gap)
         y = header + (index // 4) * (row_height + gap)
-        draw.rounded_rectangle((x, y, x + cell - 1, y + row_height - 1), 10, fill=CARD, outline=EDGE)
+        draw.rectangle((x, y, x + cell - 1, y + row_height - 1), fill=CARD, outline=EDGE)
         render_path = args.directory / (champion["id"] + ".png")
-        render = Image.open(render_path).convert("RGB")
-        render.thumbnail((cell - 6, render_height - 6), Image.Resampling.LANCZOS)
-        panel.paste(render, (x + (cell - render.width) // 2, y + 4))
-        draw.line((x + 16, y + render_height, x + cell - 16, y + render_height), fill=EDGE)
+        with Image.open(render_path) as raw:
+            render = raw.convert("RGB").resize((cell - 2, render_height - 2), Image.Resampling.LANCZOS)
+        panel.paste(render, (x + 1, y + 1))
+        draw.line((x + 1, y + render_height, x + cell - 2, y + render_height), fill=EDGE)
         draw.text((x + 18, y + render_height + 10), champion["class"].upper(), font=role, fill=EMBER)
         draw.text((x + 18, y + render_height + 30), champion["champion"], font=name, fill=INK)
         draw.text((x + 18, y + render_height + 62), "Sworn to " + champion["god"], font=patron, fill=MUTED)

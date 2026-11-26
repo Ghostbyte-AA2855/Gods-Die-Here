@@ -170,7 +170,7 @@ func pick_target(screen_position: Vector2, fighters: Array[Dictionary]) -> int:
 		if not fighter["alive"]:
 			continue
 		var route: Vector2 = fighter["position"]
-		var torso := Vector3(route.x, 1.05, route.y)
+		var torso := Vector3(route.x, 1.26, route.y)
 		if _camera.is_position_behind(torso):
 			continue
 		var distance := _camera.unproject_position(torso).distance_to(screen_position)
@@ -339,16 +339,16 @@ func _create_pawn(fighter_id: int, class_id: String, team: int, health: float) -
 	var wound := _ring(piece, Vector3.UP * 0.115, 0.58, 0.66, _material(Color("db9dff"), Color("ae59de"), true))
 	var mend := _ring(piece, Vector3.UP * 0.125, 0.93, 0.98, _material(Color("b8f7cb"), Color("74e39d"), true))
 
-	var top := _label(piece, Vector3(0.0, 2.26, 0.0), str(ArenaMatch.CLASS_INFO[class_id].name).to_upper(), team_color, 0.0056)
+	var top := _label(piece, Vector3(0.0, 2.76, 0.0), str(ArenaMatch.CLASS_INFO[class_id].name).to_upper(), team_color, 0.0056)
 	if fighter_id == 0:
 		top.text += "  /  YOU"
-	var status_label := _label(piece, Vector3(0, 2.57, 0), "", Color("f2dca9"), 0.0051)
+	var status_label := _label(piece, Vector3(0, 3.06, 0), "", Color("f2dca9"), 0.0051)
 	var bar_back := _material(Color("141a24"), Color.BLACK, true)
 	bar_back.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	var bar_fill := _material(team_color, Color.BLACK, true)
 	bar_fill.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	_quad(piece, Vector3(0.0, 2.05, 0.0), Vector2(1.32, 0.12), bar_back)
-	var fill := _quad(piece, Vector3(0.0, 2.05, 0.007), Vector2(1.24, 0.063), bar_fill)
+	_quad(piece, Vector3(0.0, 2.55, 0.0), Vector2(1.32, 0.12), bar_back)
+	var fill := _quad(piece, Vector3(0.0, 2.55, 0.007), Vector2(1.24, 0.063), bar_fill)
 	return {
 		"node": piece, "rig": rig, "model": model, "fill": fill, "selection": selection, "health": health,
 		"class_id": class_id, "trail": trail, "guard_link": guard_link, "brace": brace,

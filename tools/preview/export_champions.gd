@@ -3,6 +3,16 @@ extends SceneTree
 const ArenaView = preload("res://scripts/arena_view.gd")
 const ArenaMatch = preload("res://scripts/arena_match.gd")
 const Pantheon = preload("res://scripts/pantheon.gd")
+const AbilityMotion = preload("res://scripts/champions/ability_motion.gd")
+# A portrait frame drawn from a real kit pose, picked to show the equipment.
+const PORTRAITS := {
+	"breakwater": [1, -0.09], "threadkeeper": [2, -0.02], "echo_duelist": [2, -0.07],
+	"forgecaller": [7, -0.10], "lamplighter": [3, -0.03], "longwatch": [7, -0.06],
+	"sluicecaller": [2, -0.09], "glassmage": [1, -0.03], "blood_cantor": [5, -0.03],
+	"bellwarden": [0, -0.10], "ash_dancer": [2, -0.09], "winter_scribe": [1, -0.09],
+	"dream_shepherd": [1, -0.06], "chainrunner": [1, -0.10], "coilwright": [2, -0.03],
+	"duskmoth": [6, -0.04],
+}
 
 
 func _initialize() -> void:
@@ -37,11 +47,19 @@ func _export_champions() -> void:
 			return
 		var model = pawn.model
 		var animator: AnimationPlayer = model.player
+		if animator == null:
+			push_error("%s is missing the model's animation player." % class_id)
+			quit(1)
+			return
 		if animated:
 			animator.stop()
 		else:
-			animator.play("cast_1")
-			animator.seek(animator.get_animation("cast_1").length * 0.45, true)
+			var portrait: Array = PORTRAITS[class_id]
+			var slot: int = portrait[0]
+			var clip := "cast_%d" % (slot + 1)
+			var contact: float = AbilityMotion.actions(class_id)[slot][2]
+			animator.play(clip)
+			animator.seek(animator.get_animation(clip).length * (contact + portrait[1]), true)
 			animator.get_parent().remove_child(animator)
 		var document := GLTFDocument.new()
 		var state := GLTFState.new()
@@ -54,7 +72,10 @@ func _export_champions() -> void:
 			push_error("%s mesh export failed (%s)." % [class_id, error_string(status)])
 			quit(1)
 			return
-		roster.append({"id": class_id, "class": kit.name, "champion": champion[2], "god": champion[0], "title": champion[1]})
+		var casts := []
+		for slot in kit.abilities.size():
+			casts.append({"action": "cast_%d" % (slot + 1), "ability": kit.abilities[slot].name})
+		roster.append({"id": class_id, "class": kit.name, "champion": champion[2], "god": champion[0], "title": champion[1], "casts": casts})
 		fighter_index += 1
 
 	var manifest := FileAccess.open(output.path_join("champions.json"), FileAccess.WRITE)

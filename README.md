@@ -34,9 +34,9 @@ The [arena guide](docs/arenas.md) explains the five environmental mechanics, the
 
 Each champion has a name, a patron, a personal curse, and an armor silhouette shaped by their god. See the [pantheon](docs/pantheon.md) for the full cast. The class panel shows the patron and champion alongside the eight combat abilities.
 
-Each champion has their own articulated 3D armor, weapons, and regalia. The lobby displays the same model used in the arena. Pick a spell to preview its full casting animation, and drag the model to inspect it from another angle.
+The 16 champions use adult proportions, contoured anatomy, articulated armor, and class-specific weapons and regalia. Their models use beveled plate edges and weathered metal, cloth, and leather materials. The lobby displays the same model used in the arena. Pick a spell to preview its full casting animation, and drag the model to inspect it from another angle.
 
-The game includes 128 ability-specific cast clips and 11 movement and reaction clips per champion. The rig carries the weapons, limbs, mantle, and ornaments. Bolts and tethers begin at the casting hand. Defeated fighters play their own fall with optional blood spray and pooling. This pass uses modeled geometry and materials with rigid joint bindings. Detailed surface textures, facial animation, and live six-human playtesting remain future work.
+The game includes 128 ability-specific cast clips and 11 movement and reaction clips per champion. The rig carries the weapons, limbs, mantle, and ornaments. Bolts and tethers begin at the casting hand. Defeated fighters play their own fall with optional blood spray and pooling. This pass uses rigid joint bindings and shared wear textures for the suit materials. Deforming cloth, individually painted texture sets, facial animation, and live six-human playtesting remain future work.
 
 ## Export champion models
 

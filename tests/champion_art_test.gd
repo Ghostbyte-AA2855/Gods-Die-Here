@@ -47,6 +47,14 @@ func _run() -> void:
 		geometry[geometry_signature] = true
 
 		_check(model.joints.size() >= 14, "%s exposes its articulated joints." % class_id)
+		_check(model.joints.pelvis.position.y > 1.10, "%s uses the long-leg adult rest proportions." % class_id)
+		var weathered := false
+		for piece in meshes:
+			for surface in piece.mesh.get_surface_count():
+				var finish := piece.mesh.surface_get_material(surface) as StandardMaterial3D
+				if finish != null and finish.albedo_texture != null and finish.roughness_texture != null and finish.normal_texture != null:
+					weathered = true
+		_check(weathered, "%s has textured albedo, roughness, and surface normals." % class_id)
 		var player: AnimationPlayer = model.player
 		for clip: String in MOVEMENT_CLIPS:
 			_verify_clip(model, player, clip, class_id, true)

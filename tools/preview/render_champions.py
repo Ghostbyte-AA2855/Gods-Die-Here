@@ -8,7 +8,7 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-VIEW_DIRECTION = Vector((0.72, 4.4, 1.25)).normalized()
+VIEW_DIRECTION = Vector((1.12, 4.4, 0.56)).normalized()
 
 
 def parse_arguments():
@@ -44,6 +44,35 @@ def frame_bounds(mesh_objects, camera):
     return xmin, xmax, ymin, ymax
 
 
+def ground_surface(bottom):
+    bpy.ops.mesh.primitive_plane_add(size=200.0, location=(0, 0, bottom - 0.009))
+    arena_floor = bpy.context.object
+    material = bpy.data.materials.new("Worn charcoal slate")
+    material.use_nodes = True
+    tree = material.node_tree
+    shader = tree.nodes.get("Principled BSDF")
+    shader.inputs["Roughness"].default_value = 0.85
+    shader.inputs["Specular IOR Level"].default_value = 0.24
+    texture = tree.nodes.new("ShaderNodeTexNoise")
+    texture.inputs["Scale"].default_value = 13.0
+    texture.inputs["Detail"].default_value = 3.0
+    coords = tree.nodes.new("ShaderNodeTexCoord")
+    tree.links.new(coords.outputs["Object"], texture.inputs["Vector"])
+    slate = tree.nodes.new("ShaderNodeValToRGB")
+    slate.color_ramp.elements[0].position = 0.19
+    slate.color_ramp.elements[0].color = (0.013, 0.011, 0.012, 1)
+    slate.color_ramp.elements[1].position = 0.82
+    slate.color_ramp.elements[1].color = (0.031, 0.029, 0.029, 1)
+    tree.links.new(texture.outputs["Fac"], slate.inputs["Fac"])
+    tree.links.new(slate.outputs["Color"], shader.inputs["Base Color"])
+    bump = tree.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.26
+    bump.inputs["Distance"].default_value = 0.012
+    tree.links.new(texture.outputs["Fac"], bump.inputs["Height"])
+    tree.links.new(bump.outputs["Normal"], shader.inputs["Normal"])
+    arena_floor.data.materials.append(material)
+
+
 def render(args, class_id):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -65,33 +94,26 @@ def render(args, class_id):
     xmin, xmax, ymin, ymax = frame_bounds(meshes, camera)
     shift = camera.matrix_world.to_3x3() @ Vector(((xmin + xmax) * 0.5, (ymin + ymax) * 0.5, 0))
     camera.location += shift
-    camera.data.ortho_scale = max(2.86, (xmax - xmin) * 1.15, (ymax - ymin) * 1.19)
+    camera.data.ortho_scale = max(2.45, (xmax - xmin) * 1.13, (ymax - ymin) * 1.13)
     scene.camera = camera
 
-    bpy.ops.mesh.primitive_plane_add(size=200.0, location=(0, 0, bottom - 0.014))
-    ground = bpy.context.object
-    material = bpy.data.materials.new("Neutral obsidian floor")
-    material.diffuse_color = (0.026, 0.021, 0.033, 1.0)
-    material.use_nodes = True
-    shader = material.node_tree.nodes.get("Principled BSDF")
-    shader.inputs["Base Color"].default_value = material.diffuse_color
-    shader.inputs["Roughness"].default_value = 0.72
-    ground.data.materials.append(material)
-
-    scene.world = bpy.data.worlds.new("Low ambient")
+    ground_surface(bottom)
+    scene.world = bpy.data.worlds.new("Unlit arena air")
     scene.world.use_nodes = True
     ambient = scene.world.node_tree.nodes.get("Background")
-    ambient.inputs["Color"].default_value = (0.28, 0.22, 0.35, 1)
-    ambient.inputs["Strength"].default_value = 0.32
-    light("Warm key", (2.5, 3.6, 4.7), center, 590.0, 3.5, (1.0, 0.83, 0.65))
-    light("Cool fill", (-2.8, 2.0, 2.5), center, 320.0, 2.8, (0.62, 0.72, 1.0))
-    light("Silver rim", (0.5, -2.2, 3.8), center, 540.0, 2.5, (0.8, 0.71, 1.0))
+    ambient.inputs["Color"].default_value = (0.56, 0.65, 0.78, 1)
+    ambient.inputs["Strength"].default_value = 0.055
+    light("High limestone key", (-2.1, 2.35, 4.4), center, 490.0, 1.45, (1.0, 0.91, 0.80))
+    light("Muted front bounce", (2.8, 3.65, 1.9), center, 110.0, 2.4, (0.67, 0.78, 1.0))
+    light("Dusk rim", (2.0, -1.7, 3.0), center, 465.0, 1.35, (0.61, 0.75, 1.0))
+    light("Coal rim", (-1.8, -2.3, 1.8), center, 280.0, 1.5, (1.0, 0.47, 0.24))
 
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
     scene.cycles.samples = args.samples
     scene.cycles.use_denoising = False
     scene.view_settings.view_transform = "AgX"
+    scene.view_settings.look = "AgX - Medium High Contrast"
     scene.render.resolution_x = args.size
     scene.render.resolution_y = args.size
     scene.render.resolution_percentage = 100
