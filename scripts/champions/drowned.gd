@@ -12,13 +12,13 @@ static func build(model, class_id: String) -> void:
 
 static func _breakwater(m) -> void:
 	var iron := "m:263337"
-	var face := "m:516364"
-	var silver := "m:86908c"
-	var brass := "m:685444"
+	var face := "m:526f75"
+	var silver := "m:a0afac"
+	var brass := "m:9b7750"
 	var hide := "342726"
 	var abyss := "121b1e"
 	var reed := "29413a"
-	var witchlight := "e:54c4ab"
+	var witchlight := "e:74d1b8"
 
 	# The cuirass is widest at the collar and drawn in sharply at the waist.
 	_shell(m, "spine", 0.0, [Vector4(0.89, 0.23, -0.015, 0.167), Vector4(1.04, 0.302, -0.018, 0.196), Vector4(1.32, 0.377, -0.022, 0.241), Vector4(1.51, 0.29, 0.005, 0.194)], iron, face)
@@ -62,26 +62,7 @@ static func _breakwater(m) -> void:
 		_bevel(m, "head", Vector3(side * 0.125, 1.903, -0.045), [Vector2(-0.062, -0.015), Vector2(0.061, -0.009), Vector2(side * 0.146, 0.158 + side * 0.013), Vector2(side * 0.027, 0.076)], 0.052, silver, face)
 	_bevel(m, "head", Vector3(0, 1.880, -0.090), [Vector2(-0.055, -0.015), Vector2(-0.024, 0.111), Vector2(0.021, 0.214), Vector2(0.058, 0.02), Vector2(0.042, -0.028)], 0.060, face, iron)
 
-	# Royal vault door. The pointed rim, buttresses and damaged planking are
-	# all shaped silhouettes or modeled relief, carried by modeled rear straps.
-	var door := Vector3(-0.655, 0.911, -0.49)
-	var door_profile := [Vector2(-0.38, -0.44), Vector2(-0.36, 0.29), Vector2(-0.24, 0.506), Vector2(-0.043, 0.655), Vector2(0.027, 0.603), Vector2(0.235, 0.486), Vector2(0.36, 0.29), Vector2(0.38, -0.42), Vector2(0.04, -0.67), Vector2(-0.095, -0.626)]
-	_bevel(m, "hand_l", door, door_profile, 0.125, brass, iron)
-	_face(m, "hand_l", door + Vector3(0, -0.013, -0.112), [Vector2(-0.281, -0.41), Vector2(-0.268, 0.25), Vector2(-0.171, 0.397), Vector2(-0.045, 0.524), Vector2(0.153, 0.404), Vector2(0.27, 0.25), Vector2(0.281, -0.37), Vector2(0.016, -0.557)], 0.053, hide)
-	for i in range(5):
-		var x := -0.231 + i * 0.102
-		_face(m, "hand_l", door + Vector3(x, -0.10, -0.154), [Vector2(-0.048, -0.27), Vector2(0.043, -0.27), Vector2(0.043, 0.24 + 0.07 * i), Vector2(-0.055, 0.19 + 0.07 * i)], 0.029, iron if i % 2 == 0 else "3b3530")
-		for j in range(2):
-			m.box("hand_l", door + Vector3(x + 0.019 * j, -0.251 + 0.112 * j, -0.178), Vector3(0.011, 0.136 - 0.029 * j, 0.015), brass, Vector3(0, 0, -0.036 * i))
-	for y in [-0.304, 0.218]:
-		_bar(m, "hand_l", door + Vector3(-0.347, y, -0.178), door + Vector3(0.295, y + 0.091, -0.178), 0.081, 0.055, face)
-		for x in [-0.29, -0.186, 0.201, 0.271]:
-			_rivet(m, "hand_l", door + Vector3(x, y + (x + 0.347) * 0.14, -0.211), 0.024, brass)
-		_bar(m, "hand_l", door + Vector3(0.109, y, -0.385), Vector3(-0.59, 0.865 + y * 0.18, 0.045), 0.061, 0.05, hide)
-	_bevel(m, "hand_l", door + Vector3(0.102, 0.029, -0.181), _pointed(0.227, 0.354), 0.064, brass, face)
-	_face(m, "hand_l", door + Vector3(0.102, 0.022, -0.228), [Vector2(-0.027, 0.068), Vector2(0.031, 0.068), Vector2(0.021, 0.006), Vector2(0.027, -0.078), Vector2(-0.024, -0.078), Vector2(-0.016, 0.009)], 0.009, abyss)
-	for i in range(4):
-		_line(m, "hand_l", door + Vector3(-0.24 + 0.10 * i, -0.451 + i * 0.045, -0.158), door + Vector3(-0.12 + 0.1 * i, -0.30 - i * 0.013, -0.191), 0.018, 0.009, reed)
+	_vault_door(m, iron, face, silver, brass, hide, abyss, reed, witchlight)
 	# Heavy hooked falchion, extended to read from the arena camera.
 	_bar(m, "hand_r", Vector3(0.564, 0.736, -0.043), Vector3(0.682, 0.99, -0.049), 0.103, 0.084, hide)
 	_bar(m, "hand_r", Vector3(0.481, 0.974, -0.095), Vector3(0.818, 0.879, -0.084), 0.084, 0.071, brass)
@@ -91,6 +72,46 @@ static func _breakwater(m) -> void:
 	for i in range(4):
 		var x := -0.329 + i * 0.141
 		_drape(m, "mantle", [Vector3(x, 1.459, 0.23), Vector3(x + 0.171, 1.456, 0.227), Vector3(x + 0.207, 0.967, 0.354), Vector3(x + 0.185, 0.557 + 0.028 * i, 0.385), Vector3(x + 0.026, 0.615 + 0.04 * (i % 2), 0.36)], 0.076, reed if i % 2 else abyss, silver)
+
+
+static func _vault_door(m, iron: String, face: String, silver: String, brass: String, hide: String, abyss: String, reed: String, witchlight: String) -> void:
+	var joint := "hand_l"
+	var door := Vector3(-0.663, 0.904, -0.365)
+	var silhouette := [Vector2(-0.39, -0.33), Vector2(-0.41, 0.25), Vector2(-0.29, 0.46),
+		Vector2(-0.045, 0.64), Vector2(0.052, 0.61), Vector2(0.29, 0.46), Vector2(0.41, 0.27),
+		Vector2(0.38, -0.35), Vector2(0.0, -0.60)]
+	_bevel(m, joint, door, silhouette, 0.133, brass, iron)
+	# The wood insets sit between the bronze rim and two shaped steel braces.
+	for index in 5:
+		var x := (index - 2) * 0.119
+		var top := 0.425 - absf(x) * 0.66
+		var bottom := -0.49 + absf(x) * 0.48
+		var panel := door + Vector3(x, 0, -0.087)
+		_face(m, joint, panel, [Vector2(-0.054, bottom + 0.04), Vector2(-0.055, top - 0.035),
+			Vector2(0.054, top + 0.015), Vector2(0.055, bottom)], 0.040, hide if index % 2 else abyss)
+		_line(m, joint, panel + Vector3(-0.027, top - 0.07, -0.025),
+			panel + Vector3(-0.016, bottom + 0.09, -0.025), 0.010, 0.009, reed)
+	for y: float in [-0.292, 0.286]:
+		_face(m, joint, door + Vector3(0, y, -0.113), [Vector2(-0.347, -0.048), Vector2(-0.201, -0.012),
+			Vector2(0, 0.058), Vector2(0.21, -0.011), Vector2(0.347, -0.045),
+			Vector2(0.321, -0.106), Vector2(0, -0.041), Vector2(-0.313, -0.104)], 0.044, face)
+		for x in [-0.288, -0.178, 0.184, 0.288]:
+			_rivet(m, joint, door + Vector3(x, y - 0.014 - absf(x) * 0.17, -0.145), 0.023, brass)
+		_bar(m, joint, door + Vector3(0.085, y, 0.051), Vector3(-0.593, 0.861 + y * 0.23, -0.013), 0.045, 0.04, hide)
+	for pin in silhouette:
+		var edge: Vector2 = pin * Vector2(0.94, 0.94)
+		_rivet(m, joint, door + Vector3(edge.x, edge.y, -0.075), 0.017, silver)
+	# The raised tide seal is readable even when the arena camera is pulled out.
+	var seal := door + Vector3(0, -0.006, -0.155)
+	_bevel(m, joint, seal, _pointed(0.318, 0.389), 0.057, brass, iron)
+	_ring(m, joint, seal + Vector3(0, 0.035, -0.040), Vector2(0.099, 0.117), 0.38, TAU - 0.76, 15, 0.011, silver)
+	_face(m, joint, seal + Vector3(0, 0.028, -0.049), [Vector2(0, 0.120), Vector2(0.042, 0.060),
+		Vector2(0.017, 0.064), Vector2(0.017, -0.071), Vector2(-0.017, -0.071),
+		Vector2(-0.017, 0.064), Vector2(-0.042, 0.060)], 0.014, witchlight)
+	for side in [-1.0, 1.0]:
+		_line(m, joint, seal + Vector3(side * 0.076, 0.053, -0.051), seal + Vector3(side * 0.060, -0.025, -0.053), 0.013, 0.012, silver)
+		_line(m, joint, seal + Vector3(side * 0.060, -0.025, -0.053), seal + Vector3(0, -0.061, -0.056), 0.012, 0.010, silver)
+		_line(m, joint, seal + Vector3(side * 0.107, -0.102, -0.043), seal + Vector3(side * 0.035, -0.121, -0.047), 0.009, 0.008, witchlight)
 
 
 static func _threadkeeper(m) -> void:

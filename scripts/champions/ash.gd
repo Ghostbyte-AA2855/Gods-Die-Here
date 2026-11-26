@@ -25,6 +25,8 @@ const HEAT := "8b3328"
 const FIRE := "9f3828"
 const CORE := "fa944c"
 const ASH_SKIN := "94696b"
+const FORGED_EDGE := "d49a62"
+const PYRE_GOLD := "ffd098"
 
 # Eive's oath lets color survive only in the ice and the inventory seals.
 const INDIGO := "191f30"
@@ -209,13 +211,35 @@ static func _zarya(m) -> void:
 
 
 static func _hook_blade(m, joint: String, side: float) -> void:
+	# The broad back absorbs light while the curved, honed edge catches it.
 	var grip := Vector3(side * 0.60, 0.865, -0.047)
-	m.tube(joint, grip + Vector3(-side * 0.04, 0.126, 0.0), grip + Vector3(side * 0.042, -0.13, -0.01), 0.029, 0.024, CHAR, 7)
-	m.tube(joint, grip + Vector3(-side * 0.11, -0.086, -0.02), grip + Vector3(side * 0.10, -0.12, -0.017), 0.028, 0.023, "m:" + SCALE, 6)
-	var outline := [Vector2(side * 0.52, 0.748), Vector2(side * 0.71, 0.743), Vector2(side * 0.84, 0.575), Vector2(side * 0.918, 0.309), Vector2(side * 0.87, 0.147), Vector2(side * 0.704, 0.088), Vector2(side * 0.778, 0.219), Vector2(side * 0.734, 0.349), Vector2(side * 0.614, 0.455)]
-	_panel(m, joint, -0.076, outline, 0.053, "m:" + OBSIDIAN)
-	_slagline(m, joint, [Vector3(side * 0.696, 0.704, -0.109), Vector3(side * 0.804, 0.554, -0.109), Vector3(side * 0.867, 0.31, -0.108), Vector3(side * 0.836, 0.172, -0.106), Vector3(side * 0.755, 0.126, -0.105)], 0.018)
-	m.tube(joint, Vector3(side * 0.65, 0.704, -0.108), Vector3(side * 0.766, 0.475, -0.111), 0.012, 0.002, "e:" + CORE, 5)
+	var base := grip + Vector3(-side * 0.043, 0.133, 0.0)
+	var hilt := grip + Vector3(side * 0.042, -0.127, -0.01)
+	m.tube(joint, base, hilt, 0.030, 0.026, CHAR, 8)
+	m.ellipsoid(joint, base, Vector3(0.087, 0.068, 0.082), "m:" + HEAT)
+	for wrap in 4:
+		var a := (wrap + 0.06) / 5.0
+		m.tube(joint, base.lerp(hilt, a), base.lerp(hilt, a + 0.047), 0.038, 0.036, "m:" + FORGED_EDGE, 6)
+	m.tube(joint, hilt + Vector3(-side * 0.106, 0.032, -0.008), hilt + Vector3(side * 0.132, -0.044, -0.039), 0.036, 0.028, "m:" + FORGED_EDGE, 7)
+	var outline := [Vector2(side * 0.51, 0.741), Vector2(side * 0.67, 0.751),
+		Vector2(side * 0.79, 0.669), Vector2(side * 0.92, 0.52), Vector2(side * 0.995, 0.319),
+		Vector2(side * 0.99, 0.187), Vector2(side * 0.936, 0.091), Vector2(side * 0.81, 0.033),
+		Vector2(side * 0.855, 0.167), Vector2(side * 0.835, 0.287), Vector2(side * 0.753, 0.394),
+		Vector2(side * 0.647, 0.473)]
+	_panel(m, joint, -0.088, outline, 0.072, "m:" + OBSIDIAN)
+	var edge := [Vector2(side * 0.713, 0.724), Vector2(side * 0.793, 0.666), Vector2(side * 0.923, 0.516),
+		Vector2(side * 0.997, 0.32), Vector2(side * 0.992, 0.185), Vector2(side * 0.934, 0.095),
+		Vector2(side * 0.809, 0.034), Vector2(side * 0.900, 0.121), Vector2(side * 0.945, 0.217),
+		Vector2(side * 0.950, 0.323), Vector2(side * 0.881, 0.50), Vector2(side * 0.769, 0.626)]
+	_bevel(m, joint, -0.112, edge, 0.020, "m:" + FORGED_EDGE, "m:" + HEAT)
+	_slagline(m, joint, [Vector3(side * 0.686, 0.697, -0.130), Vector3(side * 0.781, 0.604, -0.130),
+		Vector3(side * 0.891, 0.459, -0.130), Vector3(side * 0.939, 0.308, -0.130),
+		Vector3(side * 0.927, 0.207, -0.130), Vector3(side * 0.893, 0.153, -0.130)], 0.013)
+	m.tube(joint, Vector3(side * 0.89, 0.467, -0.137), Vector3(side * 0.922, 0.365, -0.135), 0.008, 0.004, "e:" + PYRE_GOLD, 5)
+	for cut in 2:
+		var y := 0.547 - 0.068 * cut
+		var x := side * (0.80 + cut * 0.038)
+		m.tube(joint, Vector3(x, y, -0.129), Vector3(x - side * 0.045, y + 0.056, -0.129), 0.008, 0.002, "m:" + SCALE, 5)
 
 
 static func _eive(m) -> void:
@@ -555,14 +579,23 @@ static func _pyre_harness(m) -> void:
 	_bevel(m, "head", -0.178, [Vector2(-0.149, 1.766), Vector2(-0.092, 1.711), Vector2(-0.036, 1.727),
 		Vector2(0.073, 1.726), Vector2(0.14, 1.776), Vector2(0.113, 1.627), Vector2(0.019, 1.552),
 		Vector2(-0.097, 1.629)], 0.078, "m:" + OBSIDIAN, "m:" + CHAR)
-	_slagline(m, "head", [Vector3(-0.077, 1.669, -0.25), Vector3(0.016, 1.638, -0.258),
-		Vector3(0.006, 1.608, -0.246)], 0.005)
+	_slagline(m, "head", [Vector3(-0.077, 1.669, -0.261), Vector3(0.016, 1.638, -0.265),
+		Vector3(0.006, 1.608, -0.256)], 0.005)
+	for rail in 3:
+		var y := 1.18 - rail * 0.084
+		for side in [-1.0, 1.0]:
+			var width := 0.175 - rail * 0.022
+			_bevel(m, "spine", -0.240, [Vector2(side * 0.018, y + 0.053), Vector2(side * width, y + 0.101),
+				Vector2(side * (width + 0.010), y + 0.051), Vector2(side * 0.024, y)], 0.023, "m:" + CHAR, "m:" + HEAT)
+			m.tube("spine", Vector3(side * 0.033, y + 0.051, -0.269), Vector3(side * width, y + 0.096, -0.248), 0.009, 0.006, "m:" + FORGED_EDGE, 5)
 	for side in [-1.0, 1.0]:
 		var suffix := _side(side)
 		var shoulder := 0.60 if side > 0 else 0.50
 		_bevel(m, "upper_" + suffix, -0.141, [Vector2(side * 0.284, 1.437),
 			Vector2(side * 0.449, 1.514), Vector2(side * shoulder, 1.630), Vector2(side * (shoulder + 0.053), 1.445),
 			Vector2(side * 0.513, 1.31), Vector2(side * 0.363, 1.369)], 0.058, "m:" + CHAR, "m:" + OBSIDIAN)
+		m.tube("upper_" + suffix, Vector3(side * 0.381, 1.397, -0.207),
+			Vector3(side * (shoulder - 0.014), 1.537, -0.182), 0.016, 0.006, "m:" + FORGED_EDGE, 6)
 		for slat in 3:
 			_bevel(m, "fore_" + suffix, -0.123, [Vector2(side * (0.449 + slat * 0.028), 1.112 - slat * 0.065),
 				Vector2(side * (0.541 + slat * 0.029), 1.089 - slat * 0.065),
@@ -570,14 +603,6 @@ static func _pyre_harness(m) -> void:
 				Vector2(side * (0.632 + slat * 0.027), 1.038 - slat * 0.063),
 				Vector2(side * (0.542 + slat * 0.023), 1.043 - slat * 0.066)], 0.028, "m:" + OBSIDIAN, "m:" + SCALE)
 		_greave(m, suffix, side, 0.93, "m:" + OBSIDIAN, "m:" + CHAR)
-		# Forked tongues extend beyond the blade's former edge and sweep back into the hand.
-		var side_joint := "hand_" + suffix
-		_bevel(m, side_joint, -0.097, [Vector2(side * 0.697, 0.640), Vector2(side * 0.842, 0.555),
-			Vector2(side * 0.936, 0.356), Vector2(side * 0.992, 0.190), Vector2(side * 0.920, 0.086),
-			Vector2(side * 0.811, 0.038), Vector2(side * 0.860, 0.148), Vector2(side * 0.871, 0.260),
-			Vector2(side * 0.810, 0.463), Vector2(side * 0.701, 0.557)], 0.024, "m:" + OBSIDIAN, "m:" + HEAT)
-		_slagline(m, side_joint, [Vector3(side * 0.823, 0.531, -0.128), Vector3(side * 0.918, 0.347, -0.126),
-			Vector3(side * 0.947, 0.205, -0.129), Vector3(side * 0.889, 0.111, -0.126)], 0.008)
 
 
 static func _winter_regalia(m) -> void:

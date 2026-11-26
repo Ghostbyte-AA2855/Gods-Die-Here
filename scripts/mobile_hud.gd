@@ -4,6 +4,7 @@ signal class_chosen(class_id: String)
 signal advance_pressed
 signal lobby_pressed
 signal pause_pressed
+signal presentation_option_changed(option: String, enabled: bool)
 
 const ArenaMatch = preload("res://scripts/arena_match.gd")
 const ArenaMaps = preload("res://scripts/arena_maps.gd")
@@ -66,6 +67,7 @@ var _map_info: Label
 var _map_label: Label
 var _round_label: Label
 var _score_label: Label
+var _survivors: Label
 var _time_label: Label
 var _fighter_label: Label
 var _health_bar: ProgressBar
@@ -82,6 +84,8 @@ var _result_details: Label
 var _result_action: Button
 var _result_leave: Button
 var _result_fade: Tween
+var _pause_options: HBoxContainer
+var _option_buttons: Dictionary = {}
 var _last_feed := ""
 var _feed_until := 0
 var _battle_guides: Control
@@ -218,7 +222,7 @@ func _build_ability_list() -> void:
 	_kit_panel.add_child(grid)
 	var selection := ButtonGroup.new()
 	for slot in SLOT_LABELS.size():
-		var button := _button("", 65, 17)
+		var button := _button("", 59, 17)
 		button.toggle_mode = true
 		button.button_group = selection
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -226,8 +230,8 @@ func _build_ability_list() -> void:
 		button.pressed.connect(_select_ability.bind(slot))
 		grid.add_child(button)
 		_ability_rows.append(button)
-	_ability_info = _wrapped_label("", 19, IVORY)
-	_ability_info.custom_minimum_size.y = 98
+	_ability_info = _wrapped_label("", 17, IVORY)
+	_ability_info.custom_minimum_size.y = 96
 	_kit_panel.add_child(_ability_info)
 
 
@@ -297,7 +301,7 @@ func _refresh_ability(slot: int) -> void:
 		timing += "   ·   Costs %d %s" % [cost, kit.resource]
 	elif gain > 0:
 		timing += "   ·   Builds %d %s" % [gain, kit.resource]
-	_ability_info.text = "%s · %s\n%s" % [ability.name, timing, ability.description]
+	_ability_info.text = "%s\n%s" % [timing, ability.description]
 
 
 func _fit_lobby() -> void:
@@ -333,9 +337,11 @@ func _build_battlefield() -> void:
 	_round_label = _label("", 14, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_score_label = _label("", 23, GOLD, HORIZONTAL_ALIGNMENT_CENTER, true)
 	_time_label = _label("", 17, IVORY, HORIZONTAL_ALIGNMENT_CENTER)
+	_survivors = _label("", 13, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	round_info.add_child(_round_label)
 	round_info.add_child(_score_label)
 	round_info.add_child(_time_label)
+	round_info.add_child(_survivors)
 
 	_hud_space(top)
 	var enemy_panel := _panel(top, Color("#181717ec"), 11)
@@ -359,7 +365,7 @@ func _build_battlefield() -> void:
 	messages.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	messages.offset_left = -360
 	messages.offset_right = 360
-	messages.offset_top = 111
+	messages.offset_top = 130
 	_hint = _battle_label(messages, 19, GOLD)
 	_notice = _battle_label(messages, 20, IVORY)
 	_feed = _battle_label(messages, 16, MUTED)
@@ -415,6 +421,34 @@ func _build_result() -> void:
 	_result_leave = _button("Return to champions", 64, 21)
 	_result_leave.pressed.connect(func(): lobby_pressed.emit())
 	column.add_child(_result_leave)
+	_pause_options = _row(column, 8)
+	_add_pause_option("sound", "Sound")
+	_add_pause_option("blood", "Blood")
+	_add_pause_option("reduced_motion", "Reduce shake")
+
+
+func _add_pause_option(option: String, label: String) -> void:
+	var button := _button("", 62, 16)
+	button.toggle_mode = true
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.toggled.connect(func(enabled: bool):
+		_option_label(button, label, enabled)
+		presentation_option_changed.emit(option, enabled)
+	)
+	_pause_options.add_child(button)
+	_option_buttons[option] = {"button": button, "label": label}
+
+
+func _option_label(button: Button, label: String, enabled: bool) -> void:
+	button.text = "%s\n%s" % [label, "ON" if enabled else "OFF"]
+
+
+func sync_presentation_options(sound: bool, blood: bool, reduce_shake: bool) -> void:
+	var settings := {"sound": sound, "blood": blood, "reduced_motion": reduce_shake}
+	for option in settings:
+		var item: Dictionary = _option_buttons[option]
+		item.button.set_pressed_no_signal(settings[option])
+		_option_label(item.button, item.label, settings[option])
 
 
 func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: String) -> void:
@@ -432,8 +466,7 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 		clear_battle_cues()
 		return
 	var running: bool = game.phase == "active" and not quit_prompt
-	var player_at: Vector2 = game.fighters[0].position if not game.fighters.is_empty() else Vector2.ZERO
-	_battle_guides.update_battle(get_viewport().get_camera_3d(), game.environment_zones, game.fields, player_at, running)
+	_battle_guides.update_battle(get_viewport().get_camera_3d(), game.environment_zones, game.fields, game.fighters, target, running)
 	_update_cast_cards(running)
 	_pause.disabled = game.phase != "active" or quit_prompt
 	_round_label.text = "ROUND %d  /  FIRST TO %d" % [game.round_number, game.round_limit()]
@@ -441,6 +474,11 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 	var ring_suffix := "  ·  Stay inside ring" if game.safe_radius < ArenaMatch.ARENA_RADIUS else ""
 	var seconds := ceili(game.round_time)
 	_time_label.text = "%d:%02d%s" % [floori(seconds / 60.0), seconds % 60, ring_suffix]
+	var remaining := PackedInt32Array([0, 0])
+	for fighter in game.fighters:
+		if fighter.alive:
+			remaining[fighter.team] += 1
+	_survivors.text = "%d allies alive  ·  %d rivals alive" % [remaining[0], remaining[1]]
 	var latest: String = game.feed[0] if not game.feed.is_empty() else ""
 	if latest != _last_feed:
 		_last_feed = latest
@@ -548,6 +586,7 @@ func _update_vitals(game: ArenaMatch, target: int) -> void:
 
 
 func _update_result(game: ArenaMatch, quit_prompt: bool) -> void:
+	_pause_options.visible = quit_prompt
 	_result_leave.text = "Leave match" if quit_prompt else "Return to champions"
 	if quit_prompt:
 		_result_title.text = "Match paused"

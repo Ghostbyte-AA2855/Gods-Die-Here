@@ -10,12 +10,12 @@ Pick a champion and an arena, then start the match. Each team has a guard, a hea
 |---|---|
 | Drag from the lower left | Move your champion with the floating stick. |
 | Tap or hold the large attack button | Use the basic attack and build your class resource. Holding repeats it when ready and in range. |
-| Tap an ability | Cast one of your five class abilities. The icon indicates whether it targets a rival, supports an ally, affects you, or aims at the ground. |
+| Tap an ability | Cast one of your five class abilities. A tap up to 0.22 seconds before cooldown ends is queued. The icon indicates whether it targets a rival, supports an ally, affects you, or aims at the ground. |
 | Tap Dodge | Evade in your movement direction. The button becomes Break Free during a stun, root, or silence until you use your one escape for the round. |
 | Tap a fighter or the arena floor | Lock onto a target or clear the lock. With no lock, enemies in line of sight and eligible allies are picked automatically. |
-| Tap Pause | Resume or return to the champion roster. |
+| Tap Pause | Resume, return to the champion roster, or toggle sound, blood effects, and camera shake. |
 
-The champion screen previews all six attacks and spells. In a fight, cast cards name your last ability and highlight relevant rival skills or ally support. Major spell effects show their source and hit location. The [pantheon](docs/pantheon.md) introduces each patron.
+The champion screen previews all six attacks and spells. In a fight, cast cards name your last ability and highlight relevant rival skills or ally support. Major spell effects show their source and hit location. Blocked attacks explain the specific cause, such as distance, line of sight, silence, or missing class resource. The top scoreboard also shows how many allies and rivals are still standing. The [pantheon](docs/pantheon.md) introduces each patron.
 
 ### Read the ground
 

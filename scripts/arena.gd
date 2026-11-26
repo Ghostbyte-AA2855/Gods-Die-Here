@@ -8,6 +8,7 @@ const MobileKits = preload("res://scripts/mobile_kits.gd")
 const MobileTouch = preload("res://scripts/mobile_touch.gd")
 const ABILITY_KEYS = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8]
 const BASIC_RETRY_SECONDS := 0.12
+const CAST_BUFFER_SECONDS := 0.22
 
 @export var mobile_mode: bool = false
 
@@ -24,6 +25,9 @@ var feedback_time: float = 0.0
 var last_seen_cast: int = 0
 var mobile_slots: Array[int] = []
 var attack_retry: float = 0.0
+var _queued_button := -1
+var _queued_lock := -1
+var _queue_left := 0.0
 
 
 func _ready() -> void:
@@ -40,6 +44,8 @@ func _ready() -> void:
 	hud.lobby_pressed.connect(_lobby)
 	if mobile_mode:
 		hud.pause_pressed.connect(_toggle_pause)
+		hud.presentation_option_changed.connect(_set_presentation_option)
+		hud.sync_presentation_options(not audio_cues.muted, view.blood_enabled, view.reduced_motion)
 		touch = MobileTouch.new()
 		hud.add_child(touch)
 		touch.ability_pressed.connect(_cast_mobile)
@@ -63,9 +69,11 @@ func _physics_process(delta: float) -> void:
 	game.step(delta, movement, aim.normalized() if aim.length_squared() > 0.03 else Vector2.ZERO)
 	if selected_target >= 0 and not game.fighters[selected_target].alive:
 		selected_target = -1
-	if mobile_mode and game.phase == "active" and actor.alive and touch.attack_held and attack_retry == 0.0 and actor.cooldowns[0] <= 0.0:
-		attack_retry = BASIC_RETRY_SECONDS
-		_cast(0, true)
+	if mobile_mode:
+		var fired := _fire_queued_cast(delta, actor)
+		if not fired and game.phase == "active" and actor.alive and touch.attack_held and attack_retry == 0.0 and actor.cooldowns[0] <= 0.0:
+			attack_retry = BASIC_RETRY_SECONDS
+			_cast(0, true)
 	feedback_time = maxf(feedback_time - delta, 0.0)
 
 
@@ -85,10 +93,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key == KEY_G:
 		view.blood_enabled = not view.blood_enabled
 		_set_feedback("Blood effects on" if view.blood_enabled else "Blood effects off")
+		_sync_presentation_options()
 		return
 	if key == KEY_M:
 		audio_cues.toggle()
 		_set_feedback("Sound off" if audio_cues.muted else "Sound on")
+		_sync_presentation_options()
 		return
 	if key == KEY_ESCAPE:
 		if mobile_mode and game.phase == "active":
@@ -163,10 +173,54 @@ func _cast_mobile(button: int) -> void:
 	if button == 0:
 		attack_retry = BASIC_RETRY_SECONDS
 	var fighter: Dictionary = game.fighters[0]
+	var slot: int = mobile_slots[button]
+	if button != 0:
+		_clear_queued_cast()
+		var cooldown: float = fighter.cooldowns[slot]
+		if cooldown > 0.0 and cooldown <= CAST_BUFFER_SECONDS and game.mobile_cast_blocker(slot) == "cooldown":
+			_queued_button = button
+			_queued_lock = selected_target
+			_queue_left = CAST_BUFFER_SECONDS
+			touch.set_buffered(button)
+			_set_feedback("%s queued" % fighter.abilities[slot].name)
+			return
+	if not _aim_and_cast_mobile(slot, fighter):
+		touch.refuse(button)
+
+
+func _aim_and_cast_mobile(slot: int, fighter: Dictionary) -> bool:
 	var aim := _mobile_aim(fighter)
 	if aim.length_squared() > 0.03:
 		fighter.facing = aim.normalized()
-	_cast(mobile_slots[button])
+	return _cast(slot)
+
+
+func _fire_queued_cast(delta: float, fighter: Dictionary) -> bool:
+	if _queued_button == -1:
+		return false
+	if game.phase != "active" or not fighter.alive or selected_target != _queued_lock:
+		_clear_queued_cast()
+		return false
+	_queue_left -= delta
+	var button := _queued_button
+	var slot: int = mobile_slots[button]
+	if fighter.cooldowns[slot] > 0.0:
+		if _queue_left <= 0.0:
+			_clear_queued_cast()
+		return false
+	_clear_queued_cast()
+	if _aim_and_cast_mobile(slot, fighter):
+		return true
+	touch.refuse(button)
+	return false
+
+
+func _clear_queued_cast() -> void:
+	if _queued_button != -1:
+		_queued_button = -1
+		_queue_left = 0.0
+		feedback_time = 0.0
+		touch.set_buffered(-1)
 
 
 func _dodge_mobile() -> void:
@@ -177,16 +231,24 @@ func _dodge_mobile() -> void:
 		touch.cue(MobileTouch.DODGE_BUTTON)
 		_set_feedback("Break Free used")
 	elif game.try_dodge(_movement()):
-		view.flash_ability(0, -1, -1)
+		view.flash_ability(0, -1, -1, game.fighters[0].position)
 		touch.cue(MobileTouch.DODGE_BUTTON)
 	else:
-		_set_feedback("Dodge unavailable")
+		touch.refuse(MobileTouch.DODGE_BUTTON)
+		var actor: Dictionary = game.fighters[0]
+		if actor.dodge_cooldown > 0:
+			_set_feedback("Dodge ready in %.1f s" % float(actor.dodge_cooldown))
+		elif game.has_status(actor, "root"):
+			_set_feedback("Rooted · Cannot dodge")
+		else:
+			_set_feedback("Cannot dodge right now")
 
 
 func _toggle_pause() -> void:
 	if game.phase != "active":
 		return
 	leave_prompt = not leave_prompt
+	_clear_queued_cast()
 	touch.set_active(not leave_prompt and game.fighters[0].alive)
 
 
@@ -196,7 +258,7 @@ func _notification(what: int) -> void:
 			_toggle_pause()
 
 
-func _cast(slot: int, quiet: bool = false) -> void:
+func _cast(slot: int, quiet: bool = false) -> bool:
 	var fighter: Dictionary = game.fighters[0]
 	var ability: Dictionary = fighter.abilities[slot]
 	var target := -1
@@ -206,10 +268,12 @@ func _cast(slot: int, quiet: bool = false) -> void:
 			target = selected_target
 	if game.try_ability(slot, target):
 		feedback_time = 0.0
-		return
+		return true
 	if quiet:
-		return
-	if not fighter.alive:
+		return false
+	if mobile_mode:
+		_set_feedback(_mobile_cast_feedback(fighter, ability, slot))
+	elif not fighter.alive:
 		_set_feedback("Eliminated · spectating")
 	elif fighter.cooldowns[slot] > 0:
 		_set_feedback("Ability on cooldown")
@@ -223,6 +287,25 @@ func _cast(slot: int, quiet: bool = false) -> void:
 		_set_feedback("Finishing Mend the Break")
 	else:
 		_set_feedback("Check target, range, cover, or ability setup")
+	return false
+
+
+func _mobile_cast_feedback(fighter: Dictionary, ability: Dictionary, slot: int) -> String:
+	match game.last_cast_failure:
+		"eliminated": return "Eliminated · Spectating"
+		"cooldown": return "%s ready in %.1f s" % [ability.name, maxf(0.1, float(fighter.cooldowns[slot]))]
+		"resource":
+			var missing := ceili(float(ability.cost) - float(fighter.meter))
+			return "Need %d more %s" % [missing, ArenaMatch.CLASS_INFO[fighter.class_id].resource]
+		"stun": return "Stunned · Cannot act"
+		"silence": return "Silenced · Basic attack is available"
+		"channel": return "Finish your current cast first"
+		"sight": return "Target behind cover or an eclipse veil"
+		"range": return "Target out of range · Move closer"
+		"injured_ally": return "This ability needs an injured ally"
+		"ally": return "No ally available"
+		"enemy": return "No rival available"
+		_: return "%s needs its setup first · See Abilities in the lobby" % ability.name
 
 
 func _set_feedback(message: String) -> void:
@@ -246,6 +329,7 @@ func _start(class_id: String) -> void:
 	feedback_time = 0.0
 	leave_prompt = false
 	if mobile_mode:
+		_clear_queued_cast()
 		mobile_slots = MobileKits.slots(class_id)
 		attack_retry = 0.0
 		touch.reset()
@@ -258,6 +342,7 @@ func _advance() -> void:
 	if game.phase == "round_over":
 		view.clear_casts()
 		if mobile_mode:
+			_clear_queued_cast()
 			hud.clear_battle_cues()
 		selected_target = -1
 		feedback_time = 0.0
@@ -276,6 +361,7 @@ func _continue_or_advance() -> void:
 
 
 func _lobby() -> void:
+	_clear_queued_cast()
 	view.clear_casts()
 	game = ArenaMatch.new()
 	game.mobile_mode = mobile_mode
@@ -316,3 +402,19 @@ func _cast_released(event: Dictionary) -> void:
 		hud.record_cast(event, selected_target)
 		if event.source_id == 0:
 			touch.cue(mobile_slots.find(event.slot))
+
+
+func _sync_presentation_options() -> void:
+	if mobile_mode:
+		hud.sync_presentation_options(not audio_cues.muted, view.blood_enabled, view.reduced_motion)
+
+
+func _set_presentation_option(option: String, enabled: bool) -> void:
+	match option:
+		"sound":
+			if audio_cues.muted == enabled:
+				audio_cues.toggle()
+		"blood":
+			view.blood_enabled = enabled
+		"reduced_motion":
+			view.reduced_motion = enabled

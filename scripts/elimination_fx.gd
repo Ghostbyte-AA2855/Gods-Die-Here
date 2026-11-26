@@ -1,5 +1,7 @@
 extends Node3D
 
+signal settled(at: Vector3, heading: Vector2)
+
 const SHARD_MESH := preload("res://scripts/fx/shard.tres")
 const BODY_LIFETIME := 3.7
 const MAX_REMAINS := 4
@@ -40,6 +42,10 @@ func play(pawn: Dictionary, at: Vector3, facing: Vector2, full_detail: bool) -> 
 	_scatter(scene, heading, rng, full_detail, ground_contact)
 	if full_detail:
 		_blood_pool(scene, heading, rng, ground_contact)
+	scene.create_tween().tween_callback(func():
+		var landing := scene.position - heading * 0.54
+		settled.emit(landing, Vector2(heading.x, heading.z))
+	).set_delay(ground_contact)
 	var retire := scene.create_tween()
 	retire.tween_interval(BODY_LIFETIME - 0.27)
 	retire.tween_property(scene, "position:y", scene.position.y - 0.3, 0.27)

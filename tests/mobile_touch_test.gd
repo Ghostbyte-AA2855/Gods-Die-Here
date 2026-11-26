@@ -43,6 +43,7 @@ func _run() -> void:
 	_check_targeting(arena)
 	_check_multitouch(arena)
 	_check_added_abilities(arena)
+	_check_button_feedback(arena)
 	_check_reset(arena)
 
 	var initial_viewport := root.get_visible_rect().size
@@ -196,6 +197,44 @@ func _check_added_abilities(arena) -> void:
 	_mouse_tap(fourth)
 	_check(arena.game.cast_events.size() == cast_count + 3 and arena.game.cast_events[-1].slot == slots[4],
 		"The added button also works through the mouse fallback")
+
+
+func _check_button_feedback(arena) -> void:
+	var touch = arena.touch
+	var player: Dictionary = arena.game.fighters[0]
+	var slots := MobileKits.slots("breakwater")
+	var slot: int = slots[4]
+	var action = touch._action_appearance[4]
+	# The final hundredths must still display one tenth until the action is ready.
+	player.cooldowns[slot] = 0.03
+	touch.update_fighter(player, slots, "Resolve")
+	_check(action.countdown == 1 and action.dial > 0, "The cooldown numeral and arc stay visible until readiness")
+	player.cooldowns[slot] = 0.0
+	touch.update_fighter(player, slots, "Resolve")
+	_check(action.countdown == 0 and action.dial == 0 and action.ready_until > Time.get_ticks_msec(),
+		"A cooling ability gives a brief visual cue once it becomes ready")
+	var ready_until: int = action.ready_until
+	touch.update_fighter(player, slots, "Resolve")
+	_check(action.ready_until == ready_until, "An unchanged frame does not restart the readiness pulse")
+
+	player.stun = 0.6
+	var cast_count: int = arena.game.cast_events.size()
+	_press(1, _button_position(4))
+	_release(1, _button_position(4))
+	_check(arena.game.cast_events.size() == cast_count and action.press_until > Time.get_ticks_msec() and action.refusal_until > Time.get_ticks_msec(),
+		"A rejected short tap leaves distinct press and refusal feedback without casting")
+	player.stun = 0.0
+
+	var lock: int = arena.selected_target
+	var movement := Vector2(123, root.get_visible_rect().size.y - 109.0)
+	var extra := movement + Vector2(65, 0)
+	_press(0, movement)
+	_drag(0, extra)
+	_press(1, extra)
+	_release(1, extra)
+	_check(arena.selected_target == lock and touch.direction.x > 0.9,
+		"An extra finger in the movement zone neither clears the target nor steals movement")
+	_release(0, extra, true)
 
 
 func _check_reset(arena) -> void:

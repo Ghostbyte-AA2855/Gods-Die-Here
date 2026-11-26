@@ -38,15 +38,25 @@ void fragment() {
 		float ripple_b = sin(p.y * 6.3 - p.x * 2.1 + 1.6 * sin(p.x * 1.31 + TIME * 0.84) - TIME * 1.6);
 		float glint = smoothstep(0.68, 0.97, ripple_a * 0.72 + ripple_b * 0.28) * cloud;
 		float shoal = smoothstep(0.54, 0.81, cloud) * smoothstep(0.60, 0.89, ripple_b);
+		float shoreline = exp(-abs(length(p) - 15.35 + sin(p.x + p.y) * 0.19) * 3.3);
 		floor_tone = mix(floor_tone, base.rgb * vec3(0.71, 1.43, 1.50), shoal * (1.0 - depth) * 0.42);
 		floor_tone += vec3(0.11, 0.28, 0.36) * glint;
+		floor_tone += vec3(0.054, 0.13, 0.16) * shoreline * smoothstep(0.28, 0.77, grain);
 		ambient = vec3(0.025, 0.071, 0.081) * glint * (1.0 - depth);
 		ROUGHNESS = 0.24 + 0.26 * grain;
 	} else if (design == 1) {
-		float slag = smoothstep(0.77, 0.91, grain * 0.8 + cloud * 0.38);
-		float heat = 0.6 + 0.4 * cos(TIME * 0.7 + p.y * 0.31 + p.x * 0.2);
-		floor_tone += vec3(0.23, 0.058, 0.014) * slag * heat;
-		ambient = vec3(0.17, 0.021, 0.006) * slag * heat * (1.0 - depth);
+		// Crooked seams in the slag only glow outside the court. Their
+		// muted scale keeps them distinct from the saturated vent glyphs.
+		float shear = noise21(p * 0.39 + vec2(grain * 0.36, 0.0));
+		float fault_a = abs(fract(p.x * 0.38 + p.y * 0.22 + shear * 0.75) - 0.5);
+		float fault_b = abs(fract(p.x * 0.21 - p.y * 0.37 + cloud * 0.60) - 0.5);
+		float fault = min(fault_a, fault_b);
+		float opening = smoothstep(0.37, 0.73, shear * 0.62 + cloud * 0.38);
+		float glow = (1.0 - smoothstep(0.020, 0.090, fault)) * opening;
+		float heat = 0.84 + 0.16 * cos(TIME * 0.68 + p.y * 0.27 + p.x * 0.19);
+		floor_tone *= 0.69 + 0.18 * shear;
+		floor_tone += vec3(0.30, 0.078, 0.027) * glow;
+		ambient = vec3(0.27, 0.036, 0.009) * pow(glow, 1.3) * heat * (1.0 - depth);
 	} else if (design == 2) {
 		float litter = smoothstep(0.79, 0.94, grain) * (0.30 + 0.70 * cloud);
 		floor_tone = mix(floor_tone, vec3(0.36, 0.23, 0.11), litter * 0.54);

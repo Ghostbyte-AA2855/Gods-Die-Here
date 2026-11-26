@@ -39,6 +39,7 @@ var environment_zones: Array[Dictionary] = []
 var map_hint: String = ""
 var fields: Array[Dictionary] = []
 var cast_events: Array[Dictionary] = []
+var last_cast_failure := ""
 var _cast_sequence: int = 0
 var _pending_cast: Dictionary = {}
 var _lineup: Array[String] = []
@@ -137,12 +138,39 @@ func try_mobile_ability(button: int, target_id: int = -1) -> bool:
 
 
 func try_ability(slot: int, target_id: int = -1) -> bool:
+	last_cast_failure = ""
 	if phase != "active" or slot < 0 or slot >= fighters[0].cooldowns.size():
 		return false
+	if mobile_mode:
+		last_cast_failure = mobile_cast_blocker(slot)
+		if not last_cast_failure.is_empty():
+			return false
 	var used = _use_ability(fighters[0], slot, target_id)
 	if used:
+		last_cast_failure = ""
 		_check_round_end()
+	elif mobile_mode and last_cast_failure.is_empty():
+		last_cast_failure = "setup"
 	return used
+
+
+func mobile_cast_blocker(slot: int) -> String:
+	var actor: Dictionary = fighters[0]
+	if not actor.alive:
+		return "eliminated"
+	if not MobileKits.allows(actor.class_id, slot):
+		return "hidden"
+	if actor.stun > 0.0:
+		return "stun"
+	if slot != 0 and has_status(actor, "silence"):
+		return "silence"
+	if actor.mend_time > 0.0:
+		return "channel"
+	if actor.meter < actor.abilities[slot].cost:
+		return "resource"
+	if actor.cooldowns[slot] > 0.0:
+		return "cooldown"
+	return ""
 
 
 func try_dodge(direction: Vector2) -> bool:
@@ -515,21 +543,28 @@ func _target(fighter: Dictionary, target_id: int, ally: bool, reach: float, mode
 	var best: Dictionary = {}
 	var best_score = INF
 	var origin: Vector2 = fighter.position
+	var targeted_side := "ally" if ally else "enemy"
+	var explain: bool = mobile_mode and fighter.id == 0 and _pending_cast.get("target_kind") == targeted_side
+	var filtered := false
+	var beyond_reach := false
+	var obstructed := false
 	for candidate in fighters:
 		if target_id >= 0 and target_id != candidate.id:
 			continue
 		if not candidate.alive or (candidate.team == fighter.team) != ally:
 			continue
-		if mode == "ally_other" and candidate.id == fighter.id:
-			continue
-		if mode == "injured" and candidate.health >= candidate.max_health:
-			continue
-		if mode == "unwounded" and candidate.wound_time > 0.0:
-			continue
-		if mode == "deferred" and (candidate.wound_damage <= 0.0 or candidate.wound_time <= 0.0):
+		if ((mode == "ally_other" and candidate.id == fighter.id)
+				or (mode == "injured" and candidate.health >= candidate.max_health)
+				or (mode == "unwounded" and candidate.wound_time > 0.0)
+				or (mode == "deferred" and (candidate.wound_damage <= 0.0 or candidate.wound_time <= 0.0))):
+			filtered = true
 			continue
 		var distance = origin.distance_squared_to(candidate.position)
-		if distance > reach * reach or not _has_sight(origin, candidate.position):
+		if distance > reach * reach:
+			beyond_reach = true
+			continue
+		if not _has_sight(origin, candidate.position):
+			obstructed = true
 			continue
 		var score = distance
 		if ally and mode != "nearest":
@@ -538,10 +573,22 @@ func _target(fighter: Dictionary, target_id: int, ally: bool, reach: float, mode
 			best = candidate
 			best_score = score
 	if not _pending_cast.is_empty() and not best.is_empty() and _pending_cast.target_id == -1:
-		var side := "ally" if ally else "enemy"
-		if _pending_cast.target_kind == side:
+		if _pending_cast.target_kind == targeted_side:
 			_pending_cast.target_id = best.id
 			_pending_cast.destination = best.position
+	if explain:
+		if not best.is_empty():
+			last_cast_failure = ""
+		elif obstructed:
+			last_cast_failure = "sight"
+		elif beyond_reach:
+			last_cast_failure = "range"
+		elif filtered and mode == "injured":
+			last_cast_failure = "injured_ally"
+		elif filtered:
+			last_cast_failure = "setup"
+		else:
+			last_cast_failure = targeted_side
 	return best
 
 

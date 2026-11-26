@@ -58,12 +58,93 @@ func _verify() -> void:
 	arena._toggle_pause()
 	arena._render()
 	_check(not arena.hud._battle_guides.visible and not arena.hud._cast_cards[0].visible, "Pause hides the combat cues")
+	_check(arena.hud._pause_options.visible, "Presentation options are reachable from pause")
+	arena.hud._option_buttons.blood.button.button_pressed = false
+	arena.hud._option_buttons.reduced_motion.button.button_pressed = true
+	_check(not arena.view.blood_enabled and arena.view.reduced_motion, "Touch settings change the arena presentation")
+	arena.hud._option_buttons.sound.button.button_pressed = true
+	_check(not arena.audio_cues.muted, "The pause sound button can enable audio")
+	arena.hud._option_buttons.sound.button.button_pressed = false
+	_check(arena.audio_cues.muted, "The pause sound button can mute audio")
 	arena._lobby()
 	_check(arena.hud._battle_guides._casts.is_empty() and not arena.hud._cast_cards[1].visible, "Leaving clears both teams' cast cues")
+	arena.hud.selected_map = "lockwater"
+	_verify_cast_feedback(arena)
+	_verify_input_buffer(arena)
 	arena.queue_free()
 	await process_frame
 	print("Mobile battle guides: %d/%d checks passed" % [_checks - _failures, _checks])
 	quit(1 if _failures else 0)
+
+
+func _verify_cast_feedback(arena) -> void:
+	arena._start("breakwater")
+	var game = arena.game
+	var player: Dictionary = game.fighters[0]
+	var rival: Dictionary = game.fighters[3]
+	player.position = Vector2(-1, 0)
+	rival.position = Vector2(5, 0)
+	arena.selected_target = 3
+	arena._cast_mobile(0)
+	_check("Move closer" in arena.feedback, "An out-of-range target gives actionable feedback")
+	rival.position = Vector2(1, 0)
+	game.terrain[0].position = Vector2.ZERO
+	arena._cast_mobile(0)
+	_check("behind cover" in arena.feedback, "A blocked target is distinguished from an out-of-range target")
+	game.terrain[0].position = Vector2(-7, 0)
+	game.afflict(player, "silence", 1.0)
+	arena._cast_mobile(4)
+	_check("Silenced" in arena.feedback, "A silenced ability has a specific reason")
+	arena._cast_mobile(0)
+	_check(game.last_cast_failure.is_empty() and not game.cast_events.is_empty(), "A basic attack is still accepted during silence")
+
+
+func _verify_input_buffer(arena) -> void:
+	arena._start("breakwater")
+	var game = arena.game
+	var player: Dictionary = game.fighters[0]
+	var brace_slot: int = arena.mobile_slots[4]
+	for fighter in game.fighters.slice(1):
+		fighter.stun = 5.0
+		fighter.break_free_available = false
+	player.cooldowns[brace_slot] = 0.12
+	var initial_meter: float = player.meter
+	arena._cast_mobile(4)
+	_check(arena._queued_button == 4 and game.cast_events.is_empty() and player.meter == initial_meter, "An early tap queues neither a cast event nor resource spend")
+	arena._physics_process(0.06)
+	_check(arena._queued_button == 4 and game.cast_events.is_empty(), "The queue waits while a cooldown is still active")
+	arena._physics_process(0.075)
+	_check(arena._queued_button == -1 and game.cast_events.size() == 1 and game.cast_events.back().name == "Brace", "The buffered ability fires once when its cooldown clears")
+	arena._physics_process(0.025)
+	_check(game.cast_events.size() == 1, "A consumed buffer cannot recast")
+
+	player.cooldowns[brace_slot] = 0.35
+	arena._cast_mobile(4)
+	_check(arena._queued_button == -1 and "ready in" in arena.feedback, "Taps well before readiness are rejected with remaining cooldown")
+	player.cooldowns[brace_slot] = 0.12
+	arena._cast_mobile(4)
+	arena.selected_target = 3
+	arena._physics_process(0.15)
+	_check(arena._queued_button == -1 and game.cast_events.size() == 1, "Changing the target lock cancels a queued cast")
+	player.cooldowns[brace_slot] = 0.12
+	arena._cast_mobile(4)
+	arena._toggle_pause()
+	_check(arena._queued_button == -1, "Pausing clears any queued ability")
+	arena._continue_or_advance()
+	arena._physics_process(0.15)
+	_check(game.cast_events.size() == 1, "Resuming does not fire a queued pre-pause tap")
+
+	player.cooldowns[brace_slot] = 0.219
+	arena._cast_mobile(4)
+	for step in 14:
+		arena._physics_process(1.0 / 60.0)
+	_check(game.cast_events.size() == 2, "The final physics tick accepts a tap just inside the buffer window")
+
+	player.cooldowns[brace_slot] = 0.12
+	arena._cast_mobile(4)
+	player.cooldowns[brace_slot] = 1.0
+	arena._physics_process(0.25)
+	_check(arena._queued_button == -1 and game.cast_events.size() == 2, "A delayed cooldown cannot leave an expired cast queued")
 
 
 func _check(condition: bool, detail: String) -> void:

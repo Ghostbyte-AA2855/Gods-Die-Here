@@ -17,6 +17,7 @@ var _camera: Camera3D
 var _zones: Array = []
 var _fields: Array = []
 var _player := Vector2.ZERO
+var _focus_fighters: Array[Vector2] = []
 var _casts: Dictionary = {}
 var _running := false
 
@@ -27,11 +28,17 @@ func _ready() -> void:
 	hide()
 
 
-func update_battle(camera: Camera3D, zones: Array, fields: Array, player: Vector2, running: bool) -> void:
+func update_battle(camera: Camera3D, zones: Array, fields: Array, fighters: Array[Dictionary], target: int, running: bool) -> void:
 	_camera = camera
 	_zones = zones
 	_fields = fields
-	_player = player
+	_focus_fighters.clear()
+	if not fighters.is_empty():
+		_player = fighters[0].position
+		if fighters[0].alive:
+			_focus_fighters.append(_player)
+	if target > 0 and target < fighters.size() and fighters[target].alive:
+		_focus_fighters.append(fighters[target].position)
 	_running = running
 	visible = running
 	if running:
@@ -70,12 +77,23 @@ func _draw() -> void:
 		return
 	# The guides yield to HUD panels and never block a thumb control.
 	var occupied: Array[Rect2] = [
-		Rect2(0, 0, size.x, 167),
+		Rect2(0, 0, size.x, 190),
 		Rect2(0, 114, 345, 72),
 		Rect2(size.x - 345, 114, 345, 72),
 		Rect2(0, size.y * 0.59, 268, size.y * 0.41),
 		Rect2(size.x - 327, size.y - 300, 327, 300),
 	]
+	for point in _focus_fighters:
+		var head := _project(point, 2.65)
+		var foot := _project(point, 0.0)
+		occupied.append(Rect2(head - Vector2(38, 13), Vector2(76, maxf(20.0, foot.y - head.y + 23.0))))
+	for role: String in _casts:
+		var cast: Dictionary = _casts[role]
+		var event: Dictionary = cast.event
+		var origin: Vector2 = event.get("source_after", event.origin)
+		var color := YOU if role == "YOU" else RIVAL
+		color.a = clampf(cast.remaining / 0.24, 0.0, 1.0)
+		_draw_tag(_project(origin, 2.45), "%s · %s" % [role, event.name], "", color, -56.0, occupied)
 	for zone: Dictionary in _zones:
 		if zone.phase != "idle":
 			_draw_zone(zone, occupied)
@@ -89,13 +107,6 @@ func _draw() -> void:
 			break
 		if _draw_field(field, occupied):
 			placed_fields += 1
-	for role: String in _casts:
-		var cast: Dictionary = _casts[role]
-		var event: Dictionary = cast.event
-		var origin: Vector2 = event.get("source_after", event.origin)
-		var color := YOU if role == "YOU" else RIVAL
-		color.a = clampf(cast.remaining / 0.24, 0.0, 1.0)
-		_draw_tag(_project(origin, 2.05), "%s · %s" % [role, event.name], "", color, -51.0, occupied)
 
 
 func _draw_zone(zone: Dictionary, occupied: Array[Rect2]) -> void:
@@ -130,13 +141,13 @@ func _project(point: Vector2, height: float = 0.09) -> Vector2:
 
 
 func _draw_tag(anchor: Vector2, heading: String, effect: String, tint: Color, offset: float, occupied: Array[Rect2]) -> bool:
-	if not Rect2(16, 148, size.x - 32, size.y - 162).has_point(anchor):
+	if not Rect2(16, 156, size.x - 32, size.y - 170).has_point(anchor):
 		return false
 	var font := ThemeDB.fallback_font
 	var width := maxf(_width(font, heading, 17), _width(font, effect, 15)) + 26.0
 	var height := 29.0 if effect.is_empty() else 51.0
 	var requested := Rect2(anchor + Vector2(-width * 0.5, offset), Vector2(width, height))
-	for nudge: Vector2 in [Vector2.ZERO, Vector2(-112, 2), Vector2(112, 2), Vector2(0, -height - 33), Vector2(0, 55)]:
+	for nudge: Vector2 in [Vector2.ZERO, Vector2(-112, 2), Vector2(112, 2), Vector2(0, 55), Vector2(-152, 52), Vector2(152, 52), Vector2(0, -height - 33)]:
 		var rect := Rect2(requested.position + nudge, requested.size)
 		if not Rect2(12, 157, size.x - 24, size.y - 170).encloses(rect):
 			continue

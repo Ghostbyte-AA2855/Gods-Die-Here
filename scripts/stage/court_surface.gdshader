@@ -82,8 +82,10 @@ void fragment() {
 		} else if (design == 2) {
 			float path = min(abs(p.x * 0.65 + p.y * 0.76 + 0.58 * sin(p.x * 0.39)), abs(-p.x * 0.65 + p.y * 0.76 - 0.63 * sin(p.x * 0.39)));
 			float moss = smoothstep(0.54, 0.79, stain * 0.58 + grain * 0.42 + smoothstep(0.54, 2.6, path) * 0.16);
-			vec3 loam = face * vec3(1.28, 1.0, 0.77);
-			face = mix(loam, face * vec3(0.76, 1.04, 0.66), moss * 0.89);
+			vec3 loam = face * vec3(1.12, 0.97, 0.80);
+			vec3 damp_moss = face * vec3(0.80, 0.92, 0.69);
+			face = mix(loam, damp_moss, moss * 0.85);
+			rough -= 0.08 * moss;
 		} else {
 			rough = 0.62 - stain * 0.17;
 			float ecliptic = min(abs(radius - 5.28), min(abs(radius - 8.05), abs(radius - 11.80)));

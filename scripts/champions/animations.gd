@@ -36,6 +36,7 @@ static func library(class_id: String, archetype: String, model: Node3D) -> Anima
 static func _build_library(class_id: String, archetype: String, model: Node3D) -> AnimationLibrary:
 	var result := AnimationLibrary.new()
 	var stride: Array = STRIDES[class_id]
+	var carries_vault_shield := class_id == "breakwater"
 	var reset := _clip(model, 0.01, PackedFloat32Array([0.0]), [{}], false)
 	result.add_animation("RESET", reset)
 	for name_of_clip in LOCOMOTION:
@@ -43,7 +44,10 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 		var times := _times(16)
 		var poses: Array[Dictionary] = []
 		for at in times:
-			poses.append(_walk(name_of_clip, at, stride, archetype, model))
+			var pose := _walk(name_of_clip, at, stride, archetype, model)
+			if carries_vault_shield:
+				_align_vault_shield(pose, 0.24, 0.84)
+			poses.append(pose)
 		result.add_animation(name_of_clip, _clip(model, seconds, times, poses, true))
 	var ready := _ready_pose(0.0, stride, archetype)
 	for name_of_clip in ACTION_LENGTHS:
@@ -68,6 +72,9 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 		for at in times:
 			var pose := AbilityMotion.sample(class_id, slot, at)
 			_mix_ready(pose, ready, 1.0 - smoothstep(0.0, beats.x, at) + smoothstep(beats.z, 1.0, at))
+			if carries_vault_shield:
+				var push := smoothstep(beats.x, beats.y, at) * (1.0 - smoothstep(beats.y, beats.z, at))
+				_align_vault_shield(pose, lerpf(0.24, 0.09, push), 0.84)
 			_plant_cast(pose, model)
 			poses.append(pose)
 		result.add_animation("cast_%d" % (slot + 1), _clip(model, record[1], times, poses, false))
@@ -99,6 +106,18 @@ static func _times(samples: int) -> PackedFloat32Array:
 static func _mix_ready(pose: Dictionary, ready: Dictionary, weight: float) -> void:
 	for joint in ready:
 		pose[joint] = pose.get(joint, Vector3.ZERO) + ready[joint] * weight
+
+
+static func _align_vault_shield(pose: Dictionary, pitch: float, weight: float) -> void:
+	# The vault door is strapped to the wrist. Compensate for the bent
+	# elbow and torso so its face stays between the captain and the foe.
+	var arm := Basis.IDENTITY
+	for joint in ["pelvis", "spine", "upper_l", "fore_l"]:
+		arm *= Basis.from_euler(pose.get(joint, Vector3.ZERO))
+	var face := Basis.from_euler(Vector3(pitch, -0.21, 0.04))
+	var current := Basis.from_euler(pose.get("hand_l", Vector3.ZERO)).get_rotation_quaternion()
+	var supported := (arm.inverse() * face).get_rotation_quaternion()
+	pose.hand_l = Basis(current.slerp(supported, weight)).get_euler()
 
 
 static func _plant_cast(pose: Dictionary, model: Node3D) -> void:

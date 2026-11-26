@@ -259,6 +259,10 @@ static func sample(class_id: String, slot: int, normalized_time: float) -> Dicti
 		_shape_hammerfall(loaded, contact_pose, follow)
 	elif class_id == "glassmage" and slot == 7:
 		_shape_shattercast(loaded, contact_pose, follow)
+	elif class_id == "breakwater" and slot in [3, 7]:
+		_shape_shield_check(loaded, contact_pose, follow, slot == 7)
+	elif class_id == "ash_dancer" and slot == 7:
+		_shape_furnace_turn(loaded, contact_pose, follow)
 	var pose := _body_pose(t, timing, loaded, contact_pose, follow)
 	# Free ends lag the body and are still catching up during the recovery.
 	var drift := _body_pose(maxf(t - 0.063 * sin(t * PI), 0.0), timing, loaded, contact_pose, follow)
@@ -300,6 +304,49 @@ static func _shape_shattercast(loaded: Dictionary, contact: Dictionary, follow: 
 	contact.upper_l += Vector3(-10.0, 7.0, -8.0)
 	follow.hand_r += Vector3(11.0, -16.0, 16.0)
 	follow.hand_l += Vector3(9.0, 19.0, -20.0)
+
+
+static func _shape_shield_check(loaded: Dictionary, contact: Dictionary, follow: Dictionary, planted: bool) -> void:
+	# Draw the vault door back against the shoulder, then drive with the body.
+	loaded.spine += Vector3(3.0, -13.0, -5.0)
+	loaded.upper_l = Vector3(31.0, 10.0, 12.0)
+	loaded.fore_l = Vector3(44.0, -17.0, -6.0)
+	loaded.hand_l = Vector3(-28.0, -8.0, 3.0)
+	contact.spine += Vector3(-5.0, 16.0, 3.0)
+	contact.upper_l = Vector3(64.0, 7.0, -11.0)
+	contact.fore_l = Vector3(18.0, -7.0, 3.0)
+	contact.hand_l = Vector3(-49.0, 5.0, -4.0)
+	contact.upper_r += Vector3(-16.0, -9.0, 4.0)
+	follow.upper_l = Vector3(36.0, 1.0, -5.0)
+	follow.fore_l = Vector3(39.0, -9.0, 2.0)
+	follow.hand_l = Vector3(-40.0, 0.0, 2.0)
+	if planted:
+		contact.upper_l.x = 44.0
+		contact.fore_l.x = 23.0
+		contact.spine.x -= 10.0
+		follow.offset += Vector3(-0.025, -0.055, -0.012)
+		follow.upper_l = contact.upper_l.lerp(follow.upper_l, 0.42)
+		follow.fore_l = contact.fore_l.lerp(follow.fore_l, 0.42)
+
+
+static func _shape_furnace_turn(loaded: Dictionary, contact: Dictionary, follow: Dictionary) -> void:
+	# Gather both hooks around the leading shoulder, then open them around the torso.
+	loaded.spine += Vector3(2.0, 26.0, 6.0)
+	loaded.head.y -= 13.0
+	loaded.upper_l += Vector3(15.0, -10.0, 43.0)
+	loaded.upper_r += Vector3(17.0, 14.0, -30.0)
+	loaded.fore_r += Vector3(28.0, 8.0, 4.0)
+	loaded.hand_l += Vector3(-16.0, 16.0, 13.0)
+	contact.spine.y -= 15.0
+	contact.upper_l += Vector3(-19.0, -13.0, -48.0)
+	contact.upper_r += Vector3(-18.0, 12.0, 35.0)
+	contact.fore_l -= Vector3(13.0, 6.0, 0.0)
+	contact.hand_l += Vector3(16.0, -9.0, -19.0)
+	follow.spine.y -= 29.0
+	follow.pelvis.y -= 10.0
+	follow.upper_l += Vector3(5.0, 12.0, -55.0)
+	follow.upper_r += Vector3(-4.0, -10.0, 37.0)
+	follow.hand_r += Vector3(10.0, 24.0, 19.0)
 
 
 static func beats(clip: Array) -> Vector3:

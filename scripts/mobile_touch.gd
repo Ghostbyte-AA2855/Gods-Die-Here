@@ -16,6 +16,11 @@ const IGNORED_ROLE := -3
 const DODGE_BUTTON := 6
 const HIT_PADDING := 3.0
 const CONTROL_PADDING := 14.0
+const PRESS_MS := 110
+const RELEASE_MS := 230
+const READY_MS := 320
+const REFUSAL_MS := 240
+const DIAL_STEPS := 90
 
 # Two thumb rows keep the larger basic attack low and Dodge apart from the spells.
 const OFFSETS := [
@@ -39,6 +44,34 @@ const ACCENTS := {
 }
 const INK := Color("14101a")
 const TEXT := Color("fff0d6")
+const REFUSAL := Color("f48378")
+const QUEUED := Color("f1d286")
+
+class ActionAppearance:
+	var label := ""
+	var glyph := ""
+	var blocked := ""
+	var countdown := 0
+	var dial := 0
+	var ready_until := 0
+	var press_until := 0
+	var refusal_until := 0
+
+	func update(new_label: String, new_glyph: String, new_block: String, remaining: float, duration: float, now: int) -> bool:
+		# Store only what is actually visible. An unchanged arc or numeral does
+		# not require rebuilding the complete overlay.
+		var new_countdown := ceili(remaining * 10.0) if remaining < 1.0 else ceili(remaining) * 10
+		var new_dial := ceili(clampf(remaining / maxf(0.1, duration), 0.0, 1.0) * DIAL_STEPS)
+		if label == new_label and glyph == new_glyph and blocked == new_block and countdown == new_countdown and dial == new_dial:
+			return false
+		if countdown > 0 and new_countdown == 0 and new_block.is_empty() and label == new_label:
+			ready_until = now + READY_MS
+		label = new_label
+		glyph = new_glyph
+		blocked = new_block
+		countdown = new_countdown
+		dial = new_dial
+		return true
 
 var direction := Vector2.ZERO
 var attack_held := false
@@ -52,6 +85,10 @@ var _slots: Array = []
 var _resource := ""
 var _cue_until := PackedInt64Array()
 var _label_layouts: Dictionary = {}
+var _action_appearance: Array[ActionAppearance] = []
+var _buffered_button := -1
+var _pulse_draw_ms := 0
+var _had_pulse := false
 
 
 func _ready() -> void:
@@ -59,7 +96,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = _active
 	set_process_unhandled_input(_active)
+	set_process(_active)
 	_cue_until.resize(OFFSETS.size())
+	for button in OFFSETS.size():
+		_action_appearance.append(ActionAppearance.new())
 	resized.connect(queue_redraw)
 
 
@@ -69,6 +109,7 @@ func set_active(value: bool) -> void:
 	_active = value
 	visible = value
 	set_process_unhandled_input(value)
+	set_process(value)
 	if not value:
 		reset()
 	queue_redraw()
@@ -79,7 +120,7 @@ func update_fighter(fighter: Dictionary, slots: Array, resource: String) -> void
 	_slots = slots
 	_resource = resource
 	if _active:
-		queue_redraw()
+		_update_action_appearance()
 
 
 func reset() -> void:
@@ -89,13 +130,53 @@ func reset() -> void:
 	direction = Vector2.ZERO
 	attack_held = false
 	_cue_until.fill(0)
+	_buffered_button = -1
+	_had_pulse = false
+	for action in _action_appearance:
+		action.countdown = 0
+		action.ready_until = 0
+		action.press_until = 0
+		action.refusal_until = 0
 	queue_redraw()
 
 
 func cue(button: int) -> void:
 	if button >= 0 and button < _cue_until.size():
-		_cue_until[button] = Time.get_ticks_msec() + 230
+		_cue_until[button] = Time.get_ticks_msec() + RELEASE_MS
+		_had_pulse = true
 		queue_redraw()
+
+
+func set_buffered(button: int) -> void:
+	if _buffered_button != button:
+		_buffered_button = button
+		queue_redraw()
+
+
+func refuse(button: int) -> void:
+	if button >= 0 and button < _action_appearance.size():
+		_action_appearance[button].refusal_until = Time.get_ticks_msec() + REFUSAL_MS
+		_had_pulse = true
+		queue_redraw()
+
+
+func _process(_delta: float) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _pulse_draw_ms < 25:
+		return
+	var pulsing := false
+	for button in _action_appearance.size():
+		var action := _action_appearance[button]
+		var latest := maxi(action.press_until, maxi(action.refusal_until, _cue_until[button]))
+		if button > 0:
+			latest = maxi(latest, action.ready_until)
+		if latest > now:
+			pulsing = true
+			break
+	if pulsing or _had_pulse:
+		_pulse_draw_ms = now
+		queue_redraw()
+	_had_pulse = pulsing
 
 
 func _notification(what: int) -> void:
@@ -138,6 +219,8 @@ func _press(pointer: int, at: Vector2) -> bool:
 			_pointers[pointer] = {"role": IGNORED_ROLE}
 			return true
 		_pointers[pointer] = {"role": button}
+		_action_appearance[button].press_until = Time.get_ticks_msec() + PRESS_MS
+		_had_pulse = true
 		if button == DODGE_BUTTON:
 			dodge_pressed.emit()
 		else:
@@ -147,10 +230,13 @@ func _press(pointer: int, at: Vector2) -> bool:
 	elif _button_at(at, CONTROL_PADDING) >= 0:
 		# Near misses stay with the controls so they cannot clear a fighter lock.
 		_pointers[pointer] = {"role": IGNORED_ROLE}
-	elif _stick_id == NO_POINTER and at.x <= 270.0 and at.y >= size.y * 0.59:
-		_stick_id = pointer
-		_stick_origin = at
-		_pointers[pointer] = {"role": STICK_ROLE}
+	elif at.x <= 270.0 and at.y >= size.y * 0.59:
+		if _stick_id == NO_POINTER:
+			_stick_id = pointer
+			_stick_origin = at
+			_pointers[pointer] = {"role": STICK_ROLE}
+		else:
+			_pointers[pointer] = {"role": IGNORED_ROLE}
 	elif pointer != MOUSE_POINTER:
 		_pointers[pointer] = {"role": FIELD_ROLE, "origin": at, "moved": false}
 	else:
@@ -215,14 +301,18 @@ func _draw() -> void:
 	if not _active:
 		return
 	_draw_stick()
+	var now := Time.get_ticks_msec()
 	for button in OFFSETS.size():
-		_draw_button(button)
+		_draw_button(button, now)
 
 
 func _draw_stick() -> void:
 	var engaged := _stick_id != NO_POINTER
 	var origin := _stick_origin if engaged else Vector2(123, size.y - 109.0)
-	var thumb := origin + _stick_offset
+	var inset := Vector2.ONE * (STICK_RADIUS + 8.0)
+	var thumb_inset := Vector2.ONE * 26.0
+	origin = origin.clamp(inset, (size - inset).max(inset))
+	var thumb := (origin + _stick_offset).clamp(thumb_inset, (size - thumb_inset).max(thumb_inset))
 	var accent := Color("af946b") if engaged else Color("8a7975")
 	draw_circle(origin + Vector2(0, 3), STICK_RADIUS + 6.0, Color(0.02, 0.02, 0.03, 0.58), true, -1.0, true)
 	draw_circle(origin, STICK_RADIUS, Color(0.07, 0.055, 0.09, 0.82), true, -1.0, true)
@@ -238,19 +328,24 @@ func _draw_stick() -> void:
 	_draw_diamond(thumb, 8.0, accent)
 
 
-func _draw_button(button: int) -> void:
-	var center := _center(button)
-	var radius: float = RADII[button]
-	var held := _button_held(button)
+func _update_action_appearance() -> void:
+	var now := Time.get_ticks_msec()
+	var common_block := ""
+	if float(_fighter.get("stun", 0.0)) > 0.0:
+		common_block = "Stunned"
+	elif float(_fighter.get("mend_time", 0.0)) > 0.0:
+		common_block = "Casting"
+	var silenced := ArenaMatch.has_status(_fighter, "silence")
+	for button in _action_appearance.size():
+		_update_button_appearance(button, common_block, silenced, now)
+
+
+func _update_button_appearance(button: int, common_block: String, silenced: bool, now: int) -> void:
 	var label := "Attack"
 	var glyph := "basic" if button == 0 else "enemy"
 	var remaining := 0.0
 	var duration := ArenaMatch.DODGE_COOLDOWN
-	var blocked := ""
-	if float(_fighter.get("stun", 0.0)) > 0.0:
-		blocked = "Stunned"
-	elif float(_fighter.get("mend_time", 0.0)) > 0.0:
-		blocked = "Casting"
+	var blocked := common_block
 	if button == DODGE_BUTTON:
 		if ArenaMatch.can_break_free(_fighter):
 			label = "Break Free"
@@ -274,42 +369,67 @@ func _draw_button(button: int) -> void:
 			if button > 0:
 				glyph = str(ability.get("target", "enemy"))
 			if blocked.is_empty():
-				if button > 0 and ArenaMatch.has_status(_fighter, "silence"):
+				if button > 0 and silenced:
 					blocked = "Silenced"
 				elif float(_fighter.get("meter", 0.0)) < float(ability.cost):
 					blocked = "Need %d %s" % [int(ability.cost), _resource]
 	elif button > 0:
 		label = "Skill %d" % button
+	var action := _action_appearance[button]
+	if action.update(label, glyph, blocked, remaining, duration, now):
+		if button != 0 and action.ready_until > now:
+			_had_pulse = true
+		queue_redraw()
+
+
+func _draw_button(button: int, now: int) -> void:
+	var action := _action_appearance[button]
+	var center := _center(button)
+	var radius: float = RADII[button]
+	var held := _button_held(button)
+	var glyph := action.glyph
 	var accent: Color = ACCENTS.get(glyph, ACCENTS.enemy)
-	var unavailable := remaining > 0.0 or not blocked.is_empty()
-	held = held and not unavailable
-	var flare := clampf((_cue_until[button] - Time.get_ticks_msec()) / 230.0, 0.0, 1.0)
+	var unavailable := action.countdown > 0 or not action.blocked.is_empty()
+	var flare := _pulse_strength(_cue_until[button], RELEASE_MS, now)
+	var press := maxf(0.62 if held else 0.0, _pulse_strength(action.press_until, PRESS_MS, now))
+	var readiness := _pulse_strength(action.ready_until, READY_MS, now) if button != 0 and not unavailable else 0.0
+	var refusal := _pulse_strength(action.refusal_until, REFUSAL_MS, now)
 	var border := accent.darkened(0.42) if unavailable else accent
-	if held or flare > 0.0:
-		border = accent.lightened(maxf(flare * 0.5, 0.22 if held else 0.0))
+	if flare > 0.0 or press > 0.0:
+		border = border.lightened(maxf(flare * 0.5, press * 0.29))
+	if refusal > 0.0:
+		border = border.lerp(REFUSAL, refusal)
 	draw_circle(center + Vector2(0, 3), radius + 4.0, Color(0.02, 0.02, 0.03, 0.7), true, -1.0, true)
-	draw_circle(center, radius, INK.lerp(accent, 0.26 if held else 0.06), true, -1.0, true)
-	draw_circle(center - Vector2(0, 1), radius - 4.0, Color(accent, 0.035 + 0.18 * flare), true, -1.0, true)
-	draw_arc(center, radius, 0.0, TAU, 64, border, 2.5 if held else 2.0, true)
+	draw_circle(center, radius, INK.lerp(accent, 0.06 + 0.20 * press), true, -1.0, true)
+	draw_circle(center - Vector2(0, 1), radius - 4.0, Color(accent, 0.035 + 0.18 * flare + 0.09 * readiness), true, -1.0, true)
+	draw_arc(center, radius, 0.0, TAU, 64, border, 2.0 + press * 0.8, true)
 	draw_arc(center, radius + 1.5, -2.64, -0.5, 28, Color(border, 0.45), 1.5, true)
 	draw_arc(center, radius - 5.5, -2.66, -0.48, 24, Color(border, 0.6), 1.0, true)
 	if flare > 0.0:
 		draw_arc(center, radius + 2.0 + (1.0 - flare) * 9.0, 0.0, TAU, 40, Color(accent.lightened(0.35), flare * 0.7), 2.0, true)
+	if readiness > 0.0:
+		draw_arc(center, radius - 7.0, -2.65, -0.50, 24, Color(accent.lightened(0.66), readiness * 0.86), 2.1, true)
+	if button == _buffered_button:
+		draw_arc(center, radius + 2.0, -2.62, -0.52, 24, QUEUED, 3.0, true)
 	_draw_diamond(center - Vector2(0, radius - 2.0), 3.8, border)
 	if button == DODGE_BUTTON:
 		# A second full ring makes Dodge recognizable by shape as well as color.
 		draw_arc(center, radius - 5.0, 0.0, TAU, 48, Color(border, 0.58), 1.0, true)
-	if remaining > 0.0:
-		var sweep := TAU * clampf(remaining / maxf(0.1, duration), 0.0, 1.0)
+	if action.countdown > 0:
+		var sweep := TAU * float(action.dial) / DIAL_STEPS
 		draw_arc(center, radius - 4.0, -PI * 0.5, -PI * 0.5 + sweep, 64, accent, 2.8, true)
-		var countdown := "%.1f" % remaining if remaining < 1.0 else str(ceili(remaining))
+		var countdown := "%.1f" % (action.countdown / 10.0) if action.countdown < 10 else str(floori(action.countdown / 10.0))
 		_draw_centered(countdown, center + Vector2(0, 3), 24, TEXT)
-	elif not blocked.is_empty():
+	elif not action.blocked.is_empty():
 		_draw_glyph(glyph, center - Vector2(0, 11), border)
-		_draw_centered(blocked, center + Vector2(0, 7), 9, TEXT)
+		_draw_centered(action.blocked, center + Vector2(0, 7), 9, TEXT)
 	else:
 		_draw_glyph(glyph, center - Vector2(0, 7), accent.lightened(0.13) if held else accent)
-	_draw_button_label(label, center, radius, TEXT if not unavailable else TEXT.darkened(0.22))
+	_draw_button_label(action.label, center, radius, TEXT if not unavailable else TEXT.darkened(0.22))
+
+
+func _pulse_strength(until: int, duration: int, now: int) -> float:
+	return clampf(float(until - now) / duration, 0.0, 1.0)
 
 
 func _draw_button_label(label: String, center: Vector2, radius: float, tint: Color) -> void:
