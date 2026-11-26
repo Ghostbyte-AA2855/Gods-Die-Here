@@ -352,7 +352,7 @@ func _build_battlefield() -> void:
 	_target_label = _label("", 18, IVORY)
 	enemy.add_child(_target_label)
 	_target_bar = _meter(enemy, Color("#d98a7a"), 8)
-	_pause = _button("Ⅱ", 62, 26)
+	_pause = _button("II", 62, 26)
 	_pause.custom_minimum_size.x = 62
 	_pause.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	_pause.tooltip_text = "Pause match"
