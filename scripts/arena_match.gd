@@ -1,9 +1,12 @@
 extends RefCounted
 
 const ArenaMaps = preload("res://scripts/arena_maps.gd")
+const MobileKits = preload("res://scripts/mobile_kits.gd")
 const ARENA_RADIUS = ArenaMaps.RADIUS
 const ROUND_SECONDS = 60.0
 const ROUNDS_TO_WIN = 3
+const MOBILE_ROUND_SECONDS = 52.0
+const MOBILE_ROUNDS_TO_WIN = 2
 const DODGE_COOLDOWN = 4.0
 const Masteries = preload("res://scripts/arena_masteries.gd")
 const KIT_MODULES = [
@@ -27,6 +30,7 @@ static func _static_init() -> void:
 			CLASS_INFO[class_id] = kit
 			_modules_by_class[class_id] = module
 
+var mobile_mode: bool = false
 var map_id: String = "lockwater"
 var terrain: Array[Dictionary] = ArenaMaps.base_terrain("lockwater")
 var environment_zones: Array[Dictionary] = []
@@ -63,9 +67,9 @@ func start_match(class_id: String, lineup_seed: int = -1, mastery: int = -1, are
 			_lineup.append(_pick_role(role, rng))
 	for role in ["guard", "healer", "damage"]:
 		_lineup.append(_pick_role(role, rng))
-	_mastery_choices = [mastery if mastery in [0, 1] else -1]
+	_mastery_choices = [mastery if not mobile_mode and mastery in [0, 1] else -1]
 	for index in range(1, _lineup.size()):
-		_mastery_choices.append(rng.randi_range(-1, 1))
+		_mastery_choices.append(-1 if mobile_mode else rng.randi_range(-1, 1))
 	wins = [0, 0]
 	round_number = 0
 	match_winner = -1
@@ -101,6 +105,14 @@ func next_round() -> void:
 		_start_round()
 
 
+func round_limit() -> int:
+	return MOBILE_ROUNDS_TO_WIN if mobile_mode else ROUNDS_TO_WIN
+
+
+func round_duration() -> float:
+	return MOBILE_ROUND_SECONDS if mobile_mode else ROUND_SECONDS
+
+
 func step(delta: float, movement: Vector2, facing: Vector2) -> void:
 	if phase != "active" or not is_finite(delta) or delta <= 0.0:
 		return
@@ -111,6 +123,15 @@ func step(delta: float, movement: Vector2, facing: Vector2) -> void:
 		var slice = minf(remaining, 1.0 / 30.0)
 		_step_slice(slice, movement, facing)
 		remaining -= slice
+
+
+func try_mobile_ability(button: int, target_id: int = -1) -> bool:
+	if not mobile_mode or phase != "active":
+		return false
+	var slots := MobileKits.slots(_human_class)
+	if button < 0 or button >= slots.size():
+		return false
+	return try_ability(slots[button], target_id)
 
 
 func try_ability(slot: int, target_id: int = -1) -> bool:
@@ -147,7 +168,7 @@ func _start_round() -> void:
 	for index in _lineup.size():
 		fighters.append(_make_fighter(index, 0 if index < 3 else 1, _lineup[index]))
 	round_number += 1
-	round_time = ROUND_SECONDS
+	round_time = round_duration()
 	safe_radius = ARENA_RADIUS
 	round_winner = -1
 	phase = "active"
@@ -196,7 +217,7 @@ func _step_slice(delta: float, movement: Vector2, facing: Vector2) -> void:
 	round_time = maxf(0.0, round_time - delta)
 	var former_radius = safe_radius
 	safe_radius = lerpf(3.1, ARENA_RADIUS, clampf(round_time / 25.0, 0.0, 1.0))
-	ArenaMaps.update(self, ROUND_SECONDS - round_time, delta)
+	ArenaMaps.update(self, round_duration() - round_time, delta)
 	_tick_fields(delta)
 	if former_radius == ARENA_RADIUS and safe_radius < ARENA_RADIUS:
 		_announce("The safe zone is closing.")
@@ -247,9 +268,14 @@ func _can_act(fighter: Dictionary) -> bool:
 	return fighter.alive and fighter.stun <= 0.0 and fighter.mend_time <= 0.0
 
 
+static func can_break_free(fighter: Dictionary) -> bool:
+	return fighter.get("alive", false) and fighter.get("break_free_available", false) and (
+		fighter.get("stun", 0.0) > 0.0 or has_status(fighter, "root") or has_status(fighter, "silence")
+	)
+
+
 func _break_free(fighter: Dictionary) -> bool:
-	var controlled: bool = fighter.stun > 0.0 or has_status(fighter, "root") or has_status(fighter, "silence")
-	if not fighter.alive or not controlled or not fighter.break_free_available:
+	if not can_break_free(fighter):
 		return false
 	fighter.stun = 0.0
 	for key in fighter.statuses.keys():
@@ -297,12 +323,14 @@ func _check_round_end() -> void:
 	wins[winner] += 1
 	var team_name = "Your team" if winner == 0 else "The rival team"
 	_announce("%s won round %d." % [team_name, round_number])
-	if wins[winner] >= ROUNDS_TO_WIN:
+	if wins[winner] >= round_limit():
 		match_winner = winner
 		phase = "match_over"
 
 
 func _use_ability(fighter: Dictionary, slot: int, target_id: int) -> bool:
+	if mobile_mode and not MobileKits.allows(fighter.class_id, slot):
+		return false
 	if not _can_act(fighter) or fighter.cooldowns[slot] > 0.0:
 		return false
 	var ability: Dictionary = fighter.abilities[slot]
@@ -661,8 +689,8 @@ func afflict(target: Dictionary, kind: String, seconds: float, power: float = 0.
 	target.statuses[key] = {"kind":kind, "remaining":seconds, "power":power, "source":source_id}
 
 
-func has_status(fighter: Dictionary, kind: String) -> bool:
-	for effect in fighter.statuses.values():
+static func has_status(fighter: Dictionary, kind: String) -> bool:
+	for effect in fighter.get("statuses", {}).values():
 		if effect.kind == kind:
 			return true
 	return false

@@ -163,9 +163,9 @@ func mouse_world_position(screen_position: Vector2) -> Vector2:
 	return Vector2.ZERO
 
 
-func pick_target(screen_position: Vector2, fighters: Array[Dictionary]) -> int:
+func pick_target(screen_position: Vector2, fighters: Array[Dictionary], radius: float = 36.0) -> int:
 	var closest_id := -1
-	var closest_distance := 36.0
+	var closest_distance := radius
 	for fighter in fighters:
 		if not fighter["alive"]:
 			continue
