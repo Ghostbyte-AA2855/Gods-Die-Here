@@ -17,7 +17,7 @@ static func _breakwater(m) -> void:
 	var brass := "m:9b7750"
 	var hide := "342726"
 	var abyss := "121b1e"
-	var reed := "29413a"
+	var reed := "316762"
 	var witchlight := "e:74d1b8"
 
 	# The cuirass is widest at the collar and drawn in sharply at the waist.
@@ -37,6 +37,11 @@ static func _breakwater(m) -> void:
 	_line(m, "spine", key_stem, key_stem + Vector3(0.007, -0.124, -0.004), 0.012, 0.010, brass)
 	_line(m, "spine", key_stem + Vector3(0.007, -0.095, -0.004), key_stem + Vector3(0.064, -0.095, -0.004), 0.012, 0.008, silver)
 	_line(m, "spine", key_stem + Vector3(0.007, -0.124, -0.004), key_stem + Vector3(0.052, -0.124, -0.004), 0.012, 0.008, silver)
+	# An old watch tabard hangs in front of the split hip plates.
+	_drape(m, "pelvis", [Vector3(-0.135, 0.891, -0.279), Vector3(0.091, 0.888, -0.278), Vector3(0.127, 0.651, -0.299), Vector3(0.089, 0.396, -0.298), Vector3(-0.087, 0.480, -0.275), Vector3(-0.142, 0.561, -0.266)], 0.036, reed, brass)
+	for wave in 3:
+		var height := 0.55 + wave * 0.067
+		_seam(m, "pelvis", [Vector3(-0.102, height, -0.309), Vector3(-0.039, height + 0.024, -0.318), Vector3(0.017, height - 0.009, -0.321), Vector3(0.078, height + 0.019, -0.325)], 0.009, silver)
 
 	for side in [-1.0, 1.0]:
 		var s := _side(side)
@@ -57,6 +62,12 @@ static func _breakwater(m) -> void:
 		_bevel(m, fore_index, Vector3(side * 0.538, 1.012, -0.151), _pointed(0.237, 0.262), 0.070, silver, face)
 		_gauntlet(m, hand_index, side, iron, face, brass)
 		_greaves(m, side, iron, face, brass, hide)
+	# The shield shoulder has a high, scalloped shell over its inner plate.
+	var shell := [Vector2(-0.236, -0.048), Vector2(-0.219, 0.099), Vector2(-0.103, 0.22), Vector2(0.082, 0.192), Vector2(0.151, 0.081), Vector2(0.118, -0.075), Vector2(-0.016, -0.136)]
+	_bevel(m, "upper_l", Vector3(-0.492, 1.591, -0.114), shell, 0.174, brass, face)
+	for rib in 4:
+		var start := Vector3(-0.630 + 0.079 * rib, 1.73 - 0.019 * rib, -0.203)
+		_seam(m, "upper_l", [start, start + Vector3(-0.028, -0.098, -0.031), start + Vector3(0.015, -0.193, -0.018)], 0.014, silver)
 
 	# Angular sallet with a deeply recessed visor and five fractured iron crown teeth.
 	_shell(m, "head", 0, [Vector4(1.566, 0.123, -0.018, 0.121), Vector4(1.638, 0.152, -0.019, 0.166), Vector4(1.790, 0.159, 0, 0.167), Vector4(1.884, 0.118, 0.012, 0.127), Vector4(1.92, 0.052, 0.02, 0.069)], abyss, face)
@@ -75,9 +86,10 @@ static func _breakwater(m) -> void:
 	_bevel(m, "hand_r", Vector3(0.693, 1.08, -0.075), [Vector2(-0.077, -0.14), Vector2(0.086, -0.129), Vector2(0.269, 0.409), Vector2(0.249, 0.523), Vector2(0.145, 0.484), Vector2(0.105, 0.364)], 0.064, silver, iron)
 	_line(m, "hand_r", Vector3(0.72, 1.039, -0.125), Vector3(0.895, 1.494, -0.114), 0.012, 0.008, reed)
 
-	for i in range(4):
-		var x := -0.329 + i * 0.141
-		_drape(m, "mantle", [Vector3(x, 1.459, 0.23), Vector3(x + 0.171, 1.456, 0.227), Vector3(x + 0.207, 0.967, 0.354), Vector3(x + 0.185, 0.557 + 0.028 * i, 0.385), Vector3(x + 0.026, 0.615 + 0.04 * (i % 2), 0.36)], 0.076, reed if i % 2 else abyss, silver)
+	for i in range(5):
+		var x := -0.35 + i * 0.143
+		var hem := 0.38 + i * 0.045
+		_drape(m, "mantle", [Vector3(x, 1.458, 0.23), Vector3(x + 0.155, 1.453, 0.232), Vector3(x * 1.27 + 0.19, 0.984, 0.372), Vector3(x * 1.41 + 0.19, hem, 0.428), Vector3(x * 1.42 + 0.055, hem + 0.1, 0.406), Vector3(x * 1.27 + 0.012, 0.90, 0.349)], 0.048, reed if i % 2 else "254e4a", brass)
 
 
 static func _vault_door(m, iron: String, face: String, silver: String, brass: String, hide: String, abyss: String, reed: String, witchlight: String) -> void:
@@ -134,7 +146,7 @@ static func _vault_door(m, iron: String, face: String, silver: String, brass: St
 static func _threadkeeper(m) -> void:
 	var cloth := "251924"
 	var bruised := "433043"
-	var silk := "523549"
+	var silk := "744564"
 	var pallor := "c1aea2"
 	var copper := "m:ac6b56"
 	var iron := "m:58505b"
@@ -149,6 +161,16 @@ static func _threadkeeper(m) -> void:
 		var x := -0.25 + float(i) * 0.084
 		var edge := absf(x)
 		_drape(m, "pelvis", [Vector3(x * 0.66 - 0.05, 0.965, -0.167 + edge * 0.14), Vector3(x * 0.66 + 0.05, 0.977, -0.167 + edge * 0.14), Vector3(x * 1.30 + 0.068, 0.427, -0.168 + edge * 0.38), Vector3(x * 1.64 + 0.038, 0.15 + edge * 0.38 + (i % 2) * 0.10, -0.128 + edge * 0.34), Vector3(x * 1.64 - 0.063, 0.16 + edge * 0.29, -0.161 + edge * 0.46), Vector3(x * 1.17 - 0.068, 0.466, -0.174 + edge * 0.35)], 0.059 + 0.016 * float(i % 2), cloth if i % 2 else bruised, silk)
+	# The ivory stole sits above the dark vestment and down the side of the robe.
+	var fold_outer := Vector3(-0.086, 1.225, -0.345)
+	var fold_inner := Vector3(0.025, 1.264, -0.352)
+	_drape(m, "spine", [Vector3(-0.246, 1.458, -0.281), Vector3(-0.128, 1.468, -0.301), fold_inner, fold_outer], 0.034, pallor, copper)
+	_drape(m, "spine", [fold_outer, fold_inner, Vector3(0.148, 1.031, -0.323), Vector3(0.063, 0.966, -0.293)], 0.030, pallor, copper)
+	_drape(m, "pelvis", [Vector3(0.049, 0.965, -0.252), Vector3(0.171, 0.962, -0.251), Vector3(0.242, 0.633, -0.237), Vector3(0.284, 0.344, -0.222), Vector3(0.207, 0.266, -0.228), Vector3(0.135, 0.373, -0.234)], 0.047, pallor, copper)
+	for seam in 6:
+		var at := Vector3(0.114 + seam * 0.020, 0.852 - seam * 0.087, -0.284 + seam * 0.002)
+		_line(m, "pelvis", at + Vector3(-0.017, -0.027, 0), at + Vector3(0.026, 0.019, 0), 0.009, 0.006, silk)
+		_line(m, "pelvis", at + Vector3(0.026, -0.023, 0), at + Vector3(-0.017, 0.022, 0), 0.009, 0.006, silk)
 	for i in range(5):
 		var x := -0.227 + i * 0.105
 		_drape(m, "mantle", [Vector3(x - 0.081, 1.43, 0.168), Vector3(x + 0.089, 1.429, 0.164), Vector3(x * 1.36 + 0.105, 0.61, 0.331), Vector3(x * 1.75 + 0.064, 0.151 + i * 0.046, 0.378), Vector3(x * 1.72 - 0.103, 0.265 + i * 0.030, 0.366)], 0.062, bruised if i % 2 else cloth, silk)
@@ -159,6 +181,7 @@ static func _threadkeeper(m) -> void:
 	for side in [-1.0, 1.0]:
 		var s := _side(side)
 		_face(m, "upper_" + s, Vector3(side * 0.365, 1.426, -0.108), [Vector2(-0.118, 0.094), Vector2(0.061, 0.122), Vector2(0.144, -0.042), Vector2(0.053, -0.24), Vector2(-0.09, -0.258)], 0.115, bruised)
+		_drape(m, "upper_" + s, [Vector3(side * 0.248, 1.452, -0.13), Vector3(side * 0.400, 1.52, -0.137), Vector3(side * 0.524, 1.387, -0.124), Vector3(side * 0.505, 1.172, -0.156), Vector3(side * 0.371, 1.225, -0.182), Vector3(side * 0.299, 1.330, -0.184)], 0.052, pallor if side < 0 else silk, copper)
 		_shell(m, "fore_" + s, side * 0.537, [Vector4(0.868, 0.094, -0.007, 0.108), Vector4(0.958, 0.132, -0.021, 0.126), Vector4(1.131, 0.073, 0.004, 0.086)], cloth, silk)
 		_bevel(m, "fore_" + s, Vector3(side * 0.55, 0.952, -0.124), _pointed(0.166, 0.211), 0.033, copper, iron)
 		_face(m, "hand_" + s, Vector3(side * 0.607, 0.835, -0.10), _pointed(0.127, 0.14), 0.042, iron)
@@ -189,6 +212,11 @@ static func _threadkeeper(m) -> void:
 		var at := halo + Vector3(sin(a) * 0.402, cos(a) * 0.448, 0)
 		_line(m, "ornament", at, at + Vector3(sin(a) * 0.065, cos(a) * 0.067, -0.039), 0.028, 0.001, pallor)
 		_line(m, "ornament", at, halo + Vector3(-sin(a) * 0.045, -0.125, 0.026), 0.0045, 0.005, stitch)
+	for side in [-1.0, 1.0]:
+		var anchor_angle := -1.15 if side < 0 else 1.69
+		var knot := halo + Vector3(sin(anchor_angle) * 0.391, cos(anchor_angle) * 0.448, 0.0)
+		_seam(m, "ornament", [knot, knot + Vector3(side * 0.053, -0.14, 0.021), knot + Vector3(side * 0.043, -0.266, 0.045)], 0.011, copper)
+		_face(m, "ornament", knot + Vector3(side * 0.042, -0.275, 0.045), _pointed(0.053, 0.112), 0.026, pallor)
 	# Suture crook with a stripped shaft and a sharpened, curved needle head.
 	_bar(m, "hand_r", Vector3(0.471, 0.196, -0.032), Vector3(0.701, 1.841, -0.018), 0.041, 0.049, iron)
 	for i in range(11):
@@ -205,7 +233,7 @@ static func _threadkeeper(m) -> void:
 static func _echo_duelist(m) -> void:
 	var shadow := "181720"
 	var ash := "2a263a"
-	var leather := "4a303b"
+	var leather := "71444f"
 	var gunmetal := "m:51566b"
 	var bright := "m:8f91aa"
 	var bone := "c5b6ab"
@@ -216,13 +244,22 @@ static func _echo_duelist(m) -> void:
 	_bevel(m, "spine", Vector3(0, 1.246, -0.209), [Vector2(-0.314, 0.158), Vector2(-0.217, 0.245), Vector2(0.204, 0.198), Vector2(0.284, 0.116), Vector2(0.177, -0.105), Vector2(-0.097, -0.287), Vector2(-0.229, -0.123)], 0.060, gunmetal, ash)
 	for i in range(5):
 		var y := 1.38 - i * 0.073
-		_face(m, "spine", Vector3(-0.032 - i * 0.018, y, -0.259), [Vector2(-0.223, -0.044), Vector2(-0.129, 0.058), Vector2(0.213 - 0.021 * i, 0.104), Vector2(0.186 - 0.025 * i, 0.017), Vector2(-0.136, -0.091)], 0.039, leather if i == 2 else gunmetal)
+		var plate_color := bone if i == 0 else leather if i == 2 else gunmetal
+		_face(m, "spine", Vector3(-0.032 - i * 0.018, y, -0.259), [Vector2(-0.223, -0.044), Vector2(-0.129, 0.058), Vector2(0.213 - 0.021 * i, 0.104), Vector2(0.186 - 0.025 * i, 0.017), Vector2(-0.136, -0.091)], 0.039, plate_color)
 		_line(m, "spine", Vector3(-0.233 - i * 0.018, y - 0.048, -0.283), Vector3(0.122 - 0.036 * i, y + 0.024, -0.280), 0.009, 0.008, bright)
 	_bar(m, "spine", Vector3(-0.261, 1.474, -0.269), Vector3(0.121, 0.942, -0.253), 0.051, 0.031, leather)
 	for i in range(5):
 		_rivet(m, "spine", Vector3(-0.195 + i * 0.056, 1.385 - i * 0.075, -0.291), 0.014, bright)
 	_drape(m, "mantle", [Vector3(-0.278, 1.453, 0.188), Vector3(0.083, 1.44, 0.174), Vector3(0.20, 1.109, 0.291), Vector3(0.12, 0.527, 0.395), Vector3(0.018, 0.433, 0.420), Vector3(-0.073, 0.676, 0.34), Vector3(-0.181, 0.468, 0.348), Vector3(-0.303, 0.595, 0.29)], 0.058, leather, ash)
 	_drape(m, "mantle", [Vector3(-0.37, 1.408, 0.172), Vector3(-0.185, 1.423, 0.224), Vector3(-0.135, 0.927, 0.340), Vector3(-0.291, 0.704, 0.354), Vector3(-0.324, 0.878, 0.279)], 0.048, shadow, leather)
+	# A burial sash is caught at the collar and torn into two trailing tails.
+	var scarf := [Vector3(-0.260, 1.503, -0.194), Vector3(-0.071, 1.522, -0.245), Vector3(0.170, 1.457, -0.227), Vector3(0.256, 1.319, -0.252), Vector3(0.159, 1.354, -0.272), Vector3(-0.046, 1.431, -0.279), Vector3(-0.266, 1.414, -0.235)]
+	_drape(m, "spine", scarf, 0.036, leather, bone)
+	_drape(m, "mantle", [Vector3(0.097, 1.438, 0.180), Vector3(0.233, 1.451, 0.167), Vector3(0.327, 1.138, 0.355), Vector3(0.441, 0.729, 0.484), Vector3(0.321, 0.815, 0.485), Vector3(0.210, 1.015, 0.347)], 0.044, leather, bone)
+	_drape(m, "mantle", [Vector3(0.153, 1.419, 0.186), Vector3(0.226, 1.415, 0.197), Vector3(0.321, 1.209, 0.341), Vector3(0.437, 1.032, 0.392), Vector3(0.368, 0.958, 0.438), Vector3(0.229, 1.136, 0.324)], 0.035, ash, leather)
+	var sash_clasp := Vector3(-0.184, 1.446, -0.274)
+	_bevel(m, "spine", sash_clasp, _pointed(0.108, 0.094), 0.034, bright, shadow)
+	_line(m, "spine", sash_clasp + Vector3(-0.023, -0.027, -0.023), sash_clasp + Vector3(0.021, 0.027, -0.024), 0.011, 0.006, buried_glow)
 
 	for side in [-1.0, 1.0]:
 		var s := _side(side)
@@ -238,6 +275,11 @@ static func _echo_duelist(m) -> void:
 		_shell(m, "shin_" + s, side * 0.181, [Vector4(0.191, 0.071, 0.003, 0.077), Vector4(0.344, 0.099, 0.0, 0.104), Vector4(0.528, 0.102, -0.006, 0.119)], leather, ash)
 		_bevel(m, "shin_" + s, Vector3(side * 0.18, 0.374, -0.114), _pointed(0.148, 0.298), 0.034, bright, gunmetal)
 		_pointed_boot(m, side, shadow, gunmetal, bright, -0.281, 0.099)
+	# Three nested coffin plates make the armored side unmistakable.
+	for layer in 3:
+		var center := Vector3(-0.431 - layer * 0.05, 1.533 - layer * 0.057, -0.191 + layer * 0.009)
+		_bevel(m, "upper_l", center, [Vector2(-0.17, -0.074), Vector2(-0.139, 0.041), Vector2(-0.080, 0.124), Vector2(0.035, 0.093), Vector2(0.125, 0.007), Vector2(0.078, -0.074)], 0.054, bright, gunmetal if layer > 0 else bone)
+		_line(m, "upper_l", center + Vector3(-0.100, -0.026, -0.033), center + Vector3(0.059, 0.027, -0.036), 0.010, 0.006, shadow)
 
 	# Separate pieces of the burial mask overlap a narrow, faceted cowl.
 	_shell(m, "head", 0.0, [Vector4(1.562, 0.103, 0.016, 0.125), Vector4(1.645, 0.140, -0.009, 0.148), Vector4(1.791, 0.148, 0.011, 0.161), Vector4(1.884, 0.117, 0.027, 0.143), Vector4(1.927, 0.048, 0.041, 0.069)], shadow, ash)
@@ -271,6 +313,7 @@ static func _forgecaller(m) -> void:
 	var trim := "m:c88e5f"
 	var crust := "672d20"
 	var molten := "e:ff923f"
+	var apron := "85462e"
 
 	# Korr wears a full black foundry harness, wideset and armoured on
 	# every side. A custom faceted firebox breaks the heavy torso open.
@@ -312,6 +355,23 @@ static func _forgecaller(m) -> void:
 			_line(m, fore_index, Vector3(side * (0.481 + i * 0.061), 0.939, -0.189), Vector3(side * (0.461 + i * 0.061), 1.068, -0.170), 0.008, 0.006, molten)
 		_gauntlet(m, hand_index, side, slag, nickel, brass)
 		_greaves(m, side, slag, nickel, brass, char)
+	# Split foundry apron with a hinged heat shield over the leading thigh.
+	_drape(m, "pelvis", [Vector3(-0.27, 0.951, -0.275), Vector3(0.26, 0.948, -0.281), Vector3(0.259, 0.652, -0.318), Vector3(0.138, 0.461, -0.337), Vector3(0.042, 0.557, -0.339), Vector3(-0.105, 0.449, -0.326), Vector3(-0.254, 0.573, -0.310)], 0.054, apron, trim)
+	_bar(m, "pelvis", Vector3(-0.279, 0.918, -0.301), Vector3(0.272, 0.918, -0.301), 0.053, 0.037, char)
+	_bevel(m, "pelvis", Vector3(0.055, 0.921, -0.343), _pointed(0.144, 0.105), 0.046, trim, slag)
+	for side in [-1.0, 1.0]:
+		_seam(m, "pelvis", [Vector3(side * 0.199, 0.885, -0.314), Vector3(side * 0.216, 0.694, -0.342), Vector3(side * 0.128, 0.519, -0.355)], 0.009, crust)
+	for hinge in 3:
+		var at := Vector3(-0.168, 0.832 - hinge * 0.084, -0.335 - hinge * 0.009)
+		_bevel(m, "pelvis", at, _pointed(0.166, 0.093), 0.035, brass, slag)
+		_rivet(m, "pelvis", at + Vector3.FORWARD * 0.029, 0.013, nickel)
+	# Far shoulder carries the heavy blast shutter, with visible hot slits.
+	var shutter := Vector3(-0.610, 1.575, -0.156)
+	_bevel(m, "upper_l", shutter, [Vector2(-0.196, -0.109), Vector2(-0.183, 0.122), Vector2(-0.110, 0.226), Vector2(0.125, 0.195), Vector2(0.163, 0.099), Vector2(0.096, -0.065)], 0.146, nickel, brass)
+	for slot in 3:
+		var at := shutter + Vector3(-0.10 + slot * 0.063, 0.022 + slot * 0.016, -0.091)
+		_bar(m, "upper_l", at - Vector3.UP * 0.051, at + Vector3.UP * 0.047, 0.026, 0.026, char)
+		_line(m, "upper_l", at - Vector3(0, 0.031, 0.015), at + Vector3(0, 0.035, -0.015), 0.010, 0.006, molten)
 
 	# Small, severe helmet nested visibly into the shoulder silhouette.
 	_shell(m, "head", 0, [Vector4(1.555, 0.108, -0.025, 0.126), Vector4(1.635, 0.145, -0.019, 0.150), Vector4(1.773, 0.153, 0.001, 0.148), Vector4(1.846, 0.124, 0.026, 0.126), Vector4(1.905, 0.057, 0.048, 0.070)], slag, nickel)
@@ -423,6 +483,11 @@ static func _bevel(m, joint: String, center: Vector3, silhouette: Array, depth: 
 
 static func _line(m, joint: String, a: Vector3, b: Vector3, radius: float, tip_radius: float, color: String) -> void:
 	m.tube(joint, a, b, radius, tip_radius, color, 6)
+
+
+static func _seam(m, joint: String, points: Array, radius: float, color: String) -> void:
+	for segment in range(points.size() - 1):
+		_line(m, joint, points[segment], points[segment + 1], radius, radius * 0.78, color)
 
 
 static func _bar(m, joint: String, a: Vector3, b: Vector3, width: float, depth: float, color: String) -> void:

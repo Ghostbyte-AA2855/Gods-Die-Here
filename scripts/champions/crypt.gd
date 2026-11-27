@@ -1,33 +1,33 @@
 extends RefCounted
 
 # Pilgrims of the crypt and things the crypt could no longer hold.
-const MOURNING := "14121c"
-const VELVET := "2e243f"
-const SEAM := "6a587e"
-const IVORY := "ac9480"
+const MOURNING := "211626"
+const VELVET := "4d315a"
+const SEAM := "887097"
+const IVORY := "c7b29d"
 const MOON := "b5a2ff"
-const TIN := "6a6374"
+const TIN := "797487"
 
-const SACKCLOTH := "211d21"
-const RUSTED := "5c302a"
+const SACKCLOTH := "3a272b"
+const RUSTED := "754139"
 const GAOL_IRON := "33323a"
-const ABRADED := "827982"
+const ABRADED := "a49788"
 const SCAR := "9b6b60"
-const ASH := "3a3c45"
+const ASH := "5a4749"
 
-const LEATHER := "16191d"
-const INSULATION := "262c32"
-const COPPER := "8c583a"
-const OXIDE := "425a5a"
-const CERAMIC := "82674a"
+const LEATHER := "1b252b"
+const INSULATION := "29464d"
+const COPPER := "b0784b"
+const OXIDE := "426b67"
+const CERAMIC := "c4aa80"
 const ARC := "e9c266"
 
-const CHITIN := "241a24"
-const UNDERSHELL := "472a3b"
-const VELUM := "543347"
-const LINING := "84516c"
+const CHITIN := "302136"
+const UNDERSHELL := "563447"
+const VELUM := "64445e"
+const LINING := "a26a83"
 const EYE := "ca5e97"
-const FANG := "94947b"
+const FANG := "b9a58c"
 
 
 static func build(model, class_id: String) -> void:
@@ -108,6 +108,7 @@ static func _mara(m) -> void:
 			crown + radial * 0.35, 0.017, 0.003, "m:" + IVORY, 6)
 
 	_mara_outerwear(m)
+	_mara_regalia(m)
 
 
 static func _tavren(m) -> void:
@@ -184,6 +185,7 @@ static func _tavren(m) -> void:
 		Vector3(0.084, 0.081, 0.039), "m:" + RUSTED)
 
 	_tavren_restraints(m)
+	_tavren_gaolbreak(m)
 
 
 static func _iskra(m) -> void:
@@ -239,6 +241,7 @@ static func _iskra(m) -> void:
 			m.box("foot_" + name, Vector3(0.184 * side, 0.033, -0.265 + 0.09 * i),
 				Vector3(0.212, 0.031, 0.038), "m:" + OXIDE)
 	_iskra_executioner(m)
+	_iskra_ceramics(m)
 
 static func _nim(m) -> void:
 	# Split forewings hang like a funeral veil, held by a segmented scavenger shell.
@@ -283,6 +286,7 @@ static func _nim(m) -> void:
 		_wing(m, side)
 
 	_nim_carapace(m)
+	_nim_death_mark(m)
 
 
 static func _wing(m, side: float) -> void:
@@ -611,6 +615,141 @@ static func _nim_carapace(m) -> void:
 				Vector3(x + side * 0.087, y - 0.237, -0.239), Vector3(x - side * 0.014, y - 0.36, -0.334),
 				Vector3(x - side * 0.009, y - 0.223, -0.27), Vector3(x - side * 0.046, y - 0.124, -0.19)],
 				Vector3(x + side * 0.029, y - 0.145, -0.26), 0.034, "m:" + FANG)
+
+
+static func _mara_regalia(m) -> void:
+	# The silver funeral mask tapers to a point under the slit of moonlight.
+	var mask := [Vector3(-0.136, 1.803, -0.283), Vector3(-0.088, 1.889, -0.281),
+		Vector3(0.0, 1.924, -0.293), Vector3(0.088, 1.889, -0.281),
+		Vector3(0.136, 1.803, -0.283), Vector3(0.111, 1.654, -0.281),
+		Vector3(0.0, 1.563, -0.273), Vector3(-0.111, 1.654, -0.281)]
+	_ridged(m, "head", mask, Vector3(0.0, 1.775, -0.366), 0.020, "m:" + IVORY)
+	_edge(m, "head", [Vector3(-0.118, 1.794, -0.305), Vector3(-0.072, 1.807, -0.338),
+		Vector3(0.0, 1.779, -0.379), Vector3(0.072, 1.807, -0.338),
+		Vector3(0.118, 1.794, -0.305)], 0.009, "e:" + MOON)
+	m.band("spine", Vector3(0, 1.36, -0.350), 0.075, 0.013, "m:" + IVORY, PI * 0.15, PI * 1.7)
+	m.ellipsoid("spine", Vector3(0, 1.363, -0.374), Vector3(0.069, 0.102, 0.027), "e:" + MOON)
+	for side: float in [-1.0, 1.0]:
+		var thigh := "thigh_" + _side(side)
+		var stole := [Vector3(side * 0.115, 1.471, -0.181), Vector3(side * 0.226, 1.425, -0.201),
+			Vector3(side * 0.176, 1.265, -0.319), Vector3(side * 0.19, 0.948, -0.265),
+			Vector3(side * 0.093, 0.951, -0.293), Vector3(side * 0.089, 1.180, -0.325)]
+		_ridged(m, "spine", stole, Vector3(side * 0.139, 1.243, -0.340), 0.024, VELVET)
+		_edge(m, "spine", [stole[1], stole[2], stole[3], stole[4]], 0.012, IVORY)
+		var fall := [Vector3(side * 0.092, 0.941, -0.277), Vector3(side * 0.187, 0.913, -0.267),
+			Vector3(side * 0.223, 0.57, -0.291), Vector3(side * 0.222, 0.214, -0.306),
+			Vector3(side * 0.153, 0.255, -0.326), Vector3(side * 0.115, 0.215, -0.312)]
+		_ridged(m, thigh, fall, Vector3(side * 0.155, 0.63, -0.320), 0.018, VELVET)
+		_edge(m, thigh, [fall[1], fall[2], fall[3], fall[4], fall[5]], 0.011, IVORY)
+		var shoulder := "upper_" + _side(side)
+		var flange := [Vector3(side * 0.17, 1.462, -0.098), Vector3(side * 0.35, 1.528, -0.106),
+			Vector3(side * 0.55, 1.571, 0.046), Vector3(side * 0.504, 1.425, 0.067),
+			Vector3(side * 0.286, 1.335, -0.088)]
+		_ridged(m, shoulder, flange, Vector3(side * 0.367, 1.462, -0.195), 0.034, "m:" + TIN)
+		_edge(m, shoulder, flange.slice(0, 4), 0.013, "m:" + IVORY)
+		m.band("mantle", Vector3(side * 0.27, 0.93, 0.492), 0.113, 0.013,
+			IVORY, PI * 0.24, PI * 1.48, Vector3(0.03, side * 0.16, side * 0.19))
+		m.band("mantle", Vector3(side * 0.29, 0.94, 0.492), 0.074, 0.012,
+			SEAM, PI * 0.06, PI * 1.61, Vector3(0.03, side * 0.16, side * 0.19))
+
+
+static func _tavren_gaolbreak(m) -> void:
+	# A grill repurposed as a visor, a sheared shackle, and visible repairs in the gaoler's coat.
+	for bar in 5:
+		var across := float(bar - 2)
+		var depth := -0.300 + absf(across) * 0.019
+		var head_top := Vector3(0.043 * across, 1.757 - absf(across) * 0.014, depth)
+		var head_bottom := Vector3(0.032 * across - 0.018, 1.601 + absf(across) * 0.013, depth + 0.012)
+		m.tube("head", head_top, head_bottom, 0.014, 0.014, "m:" + ABRADED, 5)
+	m.band("spine", Vector3(-0.04, 1.45, 0.03), 0.207, 0.033, "m:" + GAOL_IRON,
+		PI * 0.13, PI * 1.59, Vector3(PI * 0.53, 0.03, 0.12))
+	m.band("upper_l", Vector3(-0.43, 1.45, -0.024), 0.167, 0.034, "m:" + ABRADED,
+		PI * 0.47, PI * 1.49, Vector3(0.07, -0.19, 0.24))
+	var plate := [Vector3(-0.318, 1.467, -0.154), Vector3(-0.492, 1.572, -0.157),
+		Vector3(-0.686, 1.571, 0.013), Vector3(-0.636, 1.397, -0.085),
+		Vector3(-0.562, 1.295, -0.142), Vector3(-0.408, 1.311, -0.19)]
+	_ridged(m, "upper_l", plate, Vector3(-0.493, 1.442, -0.255), 0.043, "m:" + RUSTED)
+	_edge(m, "upper_l", plate.slice(1, 5), 0.017, "m:" + ABRADED)
+	var torn := [Vector3(0.115, 0.963, -0.267), Vector3(0.295, 0.928, -0.201),
+		Vector3(0.392, 0.614, -0.152), Vector3(0.263, 0.47, -0.19),
+		Vector3(0.208, 0.53, -0.214), Vector3(0.148, 0.462, -0.214),
+		Vector3(0.107, 0.681, -0.237)]
+	_ridged(m, "thigh_r", torn, Vector3(0.247, 0.732, -0.277), 0.034, RUSTED)
+	_edge(m, "thigh_r", torn.slice(1, 5), 0.013, SCAR)
+	for link in 5:
+		var across := float(link)
+		m.band("spine", Vector3(-0.249 + across * 0.105, 1.388 - across * 0.084, -0.365 - sin(across * 0.51) * 0.021),
+			0.062, 0.015, "m:" + ABRADED if link % 2 == 0 else "m:" + GAOL_IRON,
+			0.0, TAU, Vector3(0.08, PI * 0.37 * (link % 2), -0.42))
+	for pin in 3:
+		var p := Vector3(0.85 + pin * 0.051, 0.373 - pin * 0.073, -0.213)
+		m.ellipsoid("hand_r", p, Vector3(0.043, 0.043, 0.031), "m:" + ABRADED)
+	_edge(m, "hand_r", [Vector3(0.967, 0.13, -0.182), Vector3(1.114, 0.128, -0.174),
+		Vector3(1.244, 0.24, -0.144), Vector3(1.288, 0.392, -0.140),
+		Vector3(1.235, 0.579, -0.133)], 0.021, "m:" + ABRADED)
+
+
+static func _iskra_ceramics(m) -> void:
+	# Vitreous insulators float over hammered copper sockets and a divided oilskin coat.
+	for side: float in [-1.0, 1.0]:
+		var suffix := _side(side)
+		var arm := "upper_" + suffix
+		var armor := [Vector3(side * 0.224, 1.418, -0.1), Vector3(side * 0.346, 1.529, -0.077),
+			Vector3(side * 0.553, 1.470, -0.025), Vector3(side * 0.546, 1.314, -0.059),
+			Vector3(side * 0.389, 1.268, -0.099), Vector3(side * 0.264, 1.33, -0.114)]
+		_ridged(m, arm, armor, Vector3(side * 0.373, 1.401, -0.22), 0.035, "m:" + OXIDE)
+		_edge(m, arm, armor.slice(0, 4), 0.017, "m:" + COPPER)
+		var cheek := [Vector3(side * 0.056, 1.808, -0.348), Vector3(side * 0.114, 1.836, -0.311),
+			Vector3(side * 0.166, 1.744, -0.261), Vector3(side * 0.086, 1.613, -0.283),
+			Vector3(side * 0.032, 1.625, -0.326)]
+		_ridged(m, "head", cheek, Vector3(side * 0.081, 1.73, -0.379), 0.021, "m:" + OXIDE)
+		_edge(m, "head", [cheek[2], cheek[3], cheek[4]], 0.009, "m:" + COPPER)
+		var plate := [Vector3(side * 0.04, 0.93, -0.262), Vector3(side * 0.245, 0.916, -0.199),
+			Vector3(side * 0.352, 0.514, -0.136), Vector3(side * 0.244, 0.368, -0.176),
+			Vector3(side * 0.085, 0.425, -0.269)]
+		_ridged(m, "thigh_" + suffix, plate, Vector3(side * 0.211, 0.635, -0.276), 0.036, OXIDE)
+		_edge(m, "thigh_" + suffix, [plate[1], plate[2], plate[3], plate[4]], 0.016, "m:" + COPPER)
+		for ring in 4:
+			var height := 1.575 + 0.103 * ring
+			var rod := Vector3(side * (0.259 + ring * 0.008), height, 0.344 - ring * 0.012)
+			m.tube("spine", rod - Vector3.UP * 0.023, rod + Vector3.UP * 0.032,
+				0.077 - ring * 0.007, 0.048 - ring * 0.004, CERAMIC, 8)
+			m.band("spine", rod + Vector3.UP * 0.018, 0.058 - ring * 0.006, 0.010,
+				"m:" + COPPER, 0.0, TAU, Vector3(PI * 0.5, 0, 0))
+	_edge(m, "spine", [Vector3(0.092, 1.399, -0.344), Vector3(-0.101, 1.236, -0.377),
+		Vector3(0.087, 1.255, -0.387), Vector3(-0.086, 1.095, -0.317)], 0.019, "m:" + COPPER)
+	var top := Vector3(0.88, 2.01, -0.367)
+	m.band("hand_r", top, 0.129, 0.020, "m:" + COPPER, PI * 0.14, PI * 1.72, Vector3(0.10, -0.12, 0.1))
+	m.ellipsoid("hand_r", top, Vector3(0.076, 0.151, 0.072), "e:" + ARC)
+
+
+static func _nim_death_mark(m) -> void:
+	for side: float in [-1.0, 1.0]:
+		var arm := "upper_" + _side(side)
+		# The swept wing channels echo the forked shape of death's-head markings.
+		var channel := [Vector3(side * 0.394, 1.37, 0.396), Vector3(side * 0.541, 1.623, 0.430),
+			Vector3(side * 0.771, 1.740, 0.480), Vector3(side * 0.926, 1.703, 0.551),
+			Vector3(side * 0.818, 1.469, 0.544), Vector3(side * 0.661, 1.409, 0.488),
+			Vector3(side * 0.626, 1.204, 0.524), Vector3(side * 0.516, 1.184, 0.487)]
+		_ridged(m, "mantle", channel, Vector3(side * 0.679, 1.545, 0.458), 0.019, LINING)
+		_edge(m, "mantle", channel.slice(1, 6), 0.017, FANG)
+		var eye := Vector3(side * 0.753, 1.562, 0.493)
+		m.band("mantle", eye, 0.096, 0.017, CHITIN, 0.0, TAU, Vector3(-0.27, side * 0.28, 0))
+		m.band("mantle", eye - Vector3(0.0, 0.0, 0.014), 0.063, 0.010, FANG,
+			0.0, TAU, Vector3(-0.27, side * 0.28, 0))
+		m.ellipsoid("mantle", eye - Vector3(0.0, 0.0, 0.019), Vector3(0.037, 0.079, 0.030), "e:" + EYE)
+		var shell := [Vector3(side * 0.198, 1.449, -0.145), Vector3(side * 0.416, 1.57, -0.052),
+			Vector3(side * 0.533, 1.501, 0.096), Vector3(side * 0.484, 1.363, -0.042),
+			Vector3(side * 0.315, 1.262, -0.126)]
+		_ridged(m, arm, shell, Vector3(side * 0.367, 1.435, -0.209), 0.043, UNDERSHELL)
+		_edge(m, arm, shell.slice(0, 4), 0.011, "m:" + FANG)
+		m.tube("head", Vector3(side * 0.118, 1.892, -0.184), Vector3(side * 0.165, 2.006, -0.170),
+			0.021, 0.001, "m:" + FANG, 5)
+		for segment in 3:
+			var y := 1.255 - segment * 0.103
+			_edge(m, "spine", [Vector3(side * 0.028, y - 0.044, -0.301),
+				Vector3(side * (0.136 - 0.016 * segment), y, -0.316),
+				Vector3(side * (0.206 - 0.017 * segment), y + 0.071, -0.280)], 0.014, "m:" + FANG)
 
 
 static func _padded_shoulder(m, joint: String, center: Vector3, side: float, color: String, trim: String, scale: float) -> void:

@@ -130,6 +130,7 @@ func _process(delta: float) -> void:
 		var cast: Dictionary = _pending_casts[index]
 		cast.remaining -= delta
 		if cast.remaining > 0.0:
+			_track_cast_hand(cast)
 			index += 1
 			continue
 		_pending_casts.remove_at(index)
@@ -245,7 +246,7 @@ func play_cast(event: Dictionary) -> void:
 	if event.get("ultimate", false):
 		_release_ultimate(event, source)
 		return
-	var cast := {"event": event, "remaining": 0.0, "hand": Vector3.UP, "source": null}
+	var cast := {"event": event, "remaining": 0.0, "hand": Vector3.UP, "source": null, "cue": null}
 	if not source.is_empty() and source.node.visible and not _charging_ultimates.has(event.source_id):
 		cast.remaining = float(source.model.cast(event.slot))
 		cast.source = source.node
@@ -257,8 +258,8 @@ func play_cast(event: Dictionary) -> void:
 	if _pending_casts.size() >= 24:
 		_release_cast(_pending_casts.pop_front())
 	var windup := event.duplicate()
-	windup.hand_origin = _event_origin(event) + cast.hand
-	_fx.play_windup(windup, cast.remaining)
+	windup.hand_origin = cast.source.global_position + cast.hand
+	cast.cue = _fx.play_windup(windup, cast.remaining)
 	_pending_casts.append(cast)
 
 
@@ -331,16 +332,25 @@ func _release_ultimate(event: Dictionary, source: Dictionary) -> void:
 		_impact = 0.28
 
 
+func _track_cast_hand(cast: Dictionary) -> void:
+	var event: Dictionary = cast.event
+	var source: Dictionary = _pawns.get(event.source_id, {})
+	if not is_instance_valid(cast.source) or source.get("node") != cast.source or not cast.source.visible:
+		return
+	if source.model.player.current_animation != "cast_%d" % (event.slot + 1):
+		return
+	var point: Vector3 = source.model.release_point(event.slot)
+	cast.hand = point - cast.source.global_position
+	if is_instance_valid(cast.cue) and cast.cue.is_inside_tree():
+		cast.cue.global_position = point
+
+
 func _release_cast(cast: Dictionary) -> void:
 	var event: Dictionary = cast.event
 	var presentation := event.duplicate()
-	var hand: Vector3 = cast.hand
-	var source: Dictionary = _pawns.get(event.source_id, {})
-	if is_instance_valid(cast.source) and source.get("node") == cast.source and cast.source.visible:
-		if source.model.player.current_animation == "cast_%d" % (event.slot + 1):
-			hand = source.model.release_point(event.slot) - cast.source.global_position
+	_track_cast_hand(cast)
 	# Preserve the cast origin even if the rig has dashed to its destination.
-	presentation.hand_origin = _event_origin(event) + hand
+	presentation.hand_origin = _event_origin(event) + cast.hand
 	_fx.play_cast(presentation)
 	cast_released.emit(event)
 	if event.source_id == 0 and not event.get("affected_ids", []).is_empty() and event.slot != 0:

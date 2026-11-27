@@ -2,39 +2,39 @@ extends RefCounted
 
 # Rhuun's choir vestments use arterial reds over old silver.
 const CASSOCK := "210b16"
-const VERMILION := "591320"
-const WINE := "481329"
-const SILVER := "8f8284"
-const TARNISH := "654958"
-const COAGULATE := "97283e"
+const VERMILION := "8c2439"
+const WINE := "572136"
+const SILVER := "b7a4a0"
+const TARNISH := "725559"
+const COAGULATE := "bf3851"
 const CHOIR_SKIN := "8d6b70"
 
 # Hest's bronze is blackened except where the rain polishes the bell rims.
 const BLACK_BRONZE := "222025"
-const BRONZE := "564133"
-const BRASS := "9d8059"
-const PATINA := "3d4d47"
+const BRONZE := "715748"
+const BRASS := "b39262"
+const PATINA := "426964"
 const GRAVE_CLOTH := "23242a"
 const TOLL_LIGHT := "bb8241"
 
 # Zarya wears split slag-glass plates that show the fire between them.
 const OBSIDIAN := "271c24"
 const CHAR := "45313a"
-const SCALE := "674445"
-const HEAT := "8b3328"
+const SCALE := "80504a"
+const HEAT := "97392a"
 const FIRE := "9f3828"
-const CORE := "fa944c"
+const CORE := "ffae64"
 const ASH_SKIN := "94696b"
 const FORGED_EDGE := "d49a62"
 const PYRE_GOLD := "ffd098"
 
 # Eive's oath lets color survive only in the ice and the inventory seals.
 const INDIGO := "191f30"
-const RIME_CLOTH := "314452"
+const RIME_CLOTH := "415668"
 const SCRIBE_IRON := "53616a"
-const BONE := "a09e93"
+const BONE := "c6bdab"
 const PAPER := "bba986"
-const ICE := "557f95"
+const ICE := "729eb7"
 const SEAL_GLOW := "85c0d3"
 
 static func build(model, class_id: String) -> void:
@@ -42,15 +42,19 @@ static func build(model, class_id: String) -> void:
 		"blood_cantor":
 			_rhuun(model)
 			_choir_reliquary(model)
+			_choir_vestment(model)
 		"bellwarden":
 			_hest(model)
 			_toll_plate(model)
+			_funeral_yoke(model)
 		"ash_dancer":
 			_zarya(model)
 			_pyre_harness(model)
+			_cinder_ribbons(model)
 		"winter_scribe":
 			_eive(model)
 			_winter_regalia(model)
+			_pale_record(model)
 
 
 static func _rhuun(m) -> void:
@@ -151,7 +155,7 @@ static func _hest(m) -> void:
 	m.tube("hand_r", Vector3(0.62, 0.40, 0.103), Vector3(0.64, 1.34, -0.162), 0.047, 0.057, "m:" + BLACK_BRONZE, 8)
 	for i in 4:
 		_cord(m, "hand_r", Vector3(0.628, 0.809 + i * 0.032, -0.016 - i * 0.011), 0.060, 0.011, "m:" + BRASS)
-	_bell(m, "hand_r", Vector3(0.65, 1.455, -0.159), 0.237, 0.321)
+	m.tube("hand_r", Vector3(0.64, 1.34, -0.162), Vector3(0.65, 1.585, -0.17), 0.057, 0.045, "m:" + BLACK_BRONZE, 8)
 	# Small buckler is a struck sounding plate on the free forearm.
 	m.ellipsoid("fore_l", Vector3(-0.59, 1.01, -0.184), Vector3(0.32, 0.40, 0.073), "m:" + BLACK_BRONZE)
 	m.band("fore_l", Vector3(-0.59, 1.01, -0.229), 0.145, 0.025, "m:" + BRASS)
@@ -656,3 +660,125 @@ static func _winter_regalia(m) -> void:
 	var book := Vector3(-0.608, 0.851, -0.289)
 	for i in 4:
 		m.tube("hand_l", book + Vector3(-0.200, -0.062 + 0.033 * i, 0.063), book + Vector3(-0.143, -0.055 + 0.033 * i, -0.043), 0.009, 0.008, "m:" + SCRIBE_IRON, 5)
+
+
+static func _choir_vestment(m) -> void:
+	# Ivory splints frame the cardinal's mantle. The red sleeves stay soft under the armor.
+	for side: float in [-1.0, 1.0]:
+		var shoulder := "upper_" + _side(side)
+		_bevel(m, shoulder, -0.188, [
+			Vector2(side * 0.24, 1.43), Vector2(side * 0.35, 1.62),
+			Vector2(side * 0.54, 1.67), Vector2(side * 0.64, 1.53),
+			Vector2(side * 0.54, 1.37), Vector2(side * 0.32, 1.35),
+		], 0.054, "m:" + SILVER, "m:" + TARNISH)
+		_tapered_cloth(m, "spine", [
+			[Vector3(side * 0.225, 1.52, -0.203), 0.053],
+			[Vector3(side * 0.264, 1.32, -0.247), 0.058],
+			[Vector3(side * 0.207, 1.09, -0.238), 0.066],
+			[Vector3(side * 0.15, 0.96, -0.212), 0.040],
+		], WINE, "m:" + SILVER)
+		_tapered_cloth(m, "thigh_" + _side(side), [
+			[Vector3(side * 0.183, 0.875, -0.219), 0.091],
+			[Vector3(side * 0.25, 0.65, -0.236), 0.106],
+			[Vector3(side * 0.268, 0.37 if side < 0.0 else 0.49, -0.221), 0.074],
+			[Vector3(side * 0.244, 0.26 if side < 0.0 else 0.39, -0.19), 0.005],
+		], VERMILION, "m:" + TARNISH)
+		var palm := Vector3(0.603 + side * 0.139, 1.20, -0.164)
+		var arch := Vector3(0.603 + side * 0.114, 1.414, -0.152)
+		m.tube("hand_r", palm, arch, 0.019, 0.012, "m:" + TARNISH, 5)
+		m.tube("hand_r", arch, Vector3(0.603, 1.498, -0.153), 0.012, 0.009, "m:" + SILVER, 5)
+		m.tube("head", Vector3(side * 0.115, 1.89, -0.326), Vector3(side * 0.066, 2.082, -0.335), 0.012, 0.009, "m:" + SILVER, 5)
+		m.tube("head", Vector3(side * 0.066, 2.082, -0.335), Vector3(0, 2.163, -0.334), 0.009, 0.005, "m:" + SILVER, 5)
+	m.tube("hand_r", Vector3(0.603, 1.289, -0.142), Vector3(0.603, 1.431, -0.150), 0.028, 0.008, "e:" + COAGULATE, 5)
+	_bevel(m, "head", -0.31, [Vector2(-0.046, 1.99), Vector2(0, 2.06), Vector2(0.046, 1.99), Vector2(0, 1.915)],
+		0.029, WINE, "m:" + SILVER)
+
+
+static func _funeral_yoke(m) -> void:
+	# Brass suspension cheeks and a verdigris apron identify the Bellwarden from behind.
+	for side: float in [-1.0, 1.0]:
+		var yoke_tip := Vector3(side * 0.55, 1.61, 0.31)
+		m.tube("mantle", Vector3(side * 0.30, 1.456, 0.287), yoke_tip, 0.051, 0.045, "m:" + BRONZE, 6)
+		m.tube("mantle", yoke_tip, Vector3(side * 0.575, 1.53, 0.446), 0.045, 0.028, "m:" + BRASS, 6)
+		m.tube("mantle", Vector3(side * 0.575, 1.53, 0.446), Vector3(side * 0.575, 1.391, 0.460), 0.022, 0.014, "m:" + PATINA, 6)
+		m.tube("mantle", Vector3(side * 0.08, 1.20, 0.23), yoke_tip, 0.036, 0.036, "m:" + BLACK_BRONZE, 6)
+		var joint := "upper_" + _side(side)
+		# An inset shoulder cheek breaks up the broad bronze planes of the bell armor.
+		_bevel(m, joint, -0.209, [Vector2(side * 0.382, 1.477), Vector2(side * 0.545, 1.552),
+			Vector2(side * 0.633, 1.46), Vector2(side * 0.575, 1.344), Vector2(side * 0.427, 1.373)],
+			0.043, "m:" + PATINA, "m:" + BRASS)
+		m.tube("head", Vector3(side * 0.248, 1.586, -0.184), Vector3(side * 0.257, 1.789, -0.119), 0.023, 0.017, "m:" + BRASS, 5)
+		m.tube("head", Vector3(side * 0.257, 1.789, -0.119), Vector3(side * 0.18, 1.983, -0.053), 0.017, 0.008, "m:" + BRONZE, 5)
+	_tapered_cloth(m, "pelvis", [[Vector3(0, 0.859, -0.325), 0.149], [Vector3(-0.017, 0.665, -0.328), 0.144],
+		[Vector3(-0.038, 0.476, -0.307), 0.147], [Vector3(-0.015, 0.340, -0.274), 0.013]], PATINA, "m:" + BRASS)
+	_panel(m, "pelvis", -0.365, [Vector2(-0.087, 0.726), Vector2(0, 0.752), Vector2(0.087, 0.726),
+		Vector2(0.071, 0.653), Vector2(0, 0.604), Vector2(-0.071, 0.653)], 0.030, "m:" + BRONZE)
+	# A lifting eye at the crown makes the helm look like an actual suspended casting.
+	m.band("head", Vector3(0, 2.100, 0.020), 0.084, 0.023, "m:" + BRASS, 0.21, PI * 0.86)
+
+
+static func _cinder_ribbons(m) -> void:
+	# Angled silk panels give turns a trailing silhouette beyond the blades.
+	_tapered_cloth(m, "mantle", [[Vector3(-0.177, 0.959, 0.165), 0.102], [Vector3(-0.253, 0.740, 0.275), 0.145],
+		[Vector3(-0.344, 0.470, 0.383), 0.111], [Vector3(-0.280, 0.232, 0.474), 0.015]], HEAT, "m:" + FORGED_EDGE)
+	_tapered_cloth(m, "mantle", [[Vector3(0.129, 0.953, 0.195), 0.098], [Vector3(0.200, 0.735, 0.331), 0.130],
+		[Vector3(0.300, 0.563, 0.397), 0.098], [Vector3(0.431, 0.395, 0.481), 0.011]], HEAT, "m:" + FORGED_EDGE)
+	for side: float in [-1.0, 1.0]:
+		var suffix := _side(side)
+		var y := 0.684 if side < 0 else 0.735
+		_tapered_cloth(m, "thigh_" + suffix, [[Vector3(side * 0.158, 0.882, -0.184), 0.110],
+			[Vector3(side * 0.210, y, -0.206), 0.106], [Vector3(side * 0.230, y - 0.15, -0.183), 0.005]],
+			HEAT, "m:" + FORGED_EDGE)
+		# A brass eye around each ember makes the tapered face guard read in profile.
+		m.tube("head", Vector3(side * 0.133, 1.799, -0.240), Vector3(side * 0.166, 1.702, -0.198), 0.013, 0.008, "m:" + FORGED_EDGE, 5)
+		m.tube("head", Vector3(side * 0.166, 1.702, -0.198), Vector3(side * 0.091, 1.61, -0.238), 0.008, 0.006, "m:" + FORGED_EDGE, 5)
+	_bevel(m, "spine", -0.266, [Vector2(-0.091, 1.397), Vector2(0.007, 1.423), Vector2(0.096, 1.383),
+		Vector2(0.067, 1.285), Vector2(-0.004, 1.216), Vector2(-0.065, 1.297)], 0.033, "m:" + OBSIDIAN, "m:" + FORGED_EDGE)
+	_panel(m, "spine", -0.310, [Vector2(-0.035, 1.365), Vector2(0.015, 1.389), Vector2(0.039, 1.349),
+		Vector2(0.009, 1.279)], 0.016, "e:" + CORE)
+
+
+static func _pale_record(m) -> void:
+	# A pale asymmetric collar catches the light above the long scholar's coat.
+	_bevel(m, "spine", -0.193, [Vector2(-0.355, 1.47), Vector2(-0.267, 1.629), Vector2(-0.158, 1.591),
+		Vector2(-0.080, 1.487), Vector2(0.045, 1.459), Vector2(0.196, 1.559), Vector2(0.284, 1.482),
+		Vector2(0.274, 1.376), Vector2(0.077, 1.333), Vector2(-0.108, 1.352), Vector2(-0.259, 1.382)],
+		0.051, BONE, RIME_CLOTH)
+	for side: float in [-1.0, 1.0]:
+		var thigh := "thigh_" + _side(side)
+		_tapered_cloth(m, thigh, [[Vector3(side * 0.23, 0.886, -0.166), 0.138], [Vector3(side * 0.295, 0.657, -0.193), 0.157],
+			[Vector3(side * 0.317, 0.401, -0.173), 0.153], [Vector3(side * 0.253, 0.253, -0.132), 0.077]], RIME_CLOTH, BONE)
+		m.tube("head", Vector3(side * 0.166, 1.848, -0.095), Vector3(side * 0.131, 1.942, -0.168), 0.014, 0.013, BONE, 5)
+		m.tube("head", Vector3(side * 0.131, 1.942, -0.168), Vector3(side * 0.009, 1.985, -0.225), 0.013, 0.011, BONE, 5)
+		var clasp := Vector3(-0.611 + side * 0.230, 0.881, -0.296 + side * 0.048)
+		m.box("hand_l", clasp, Vector3(0.032, 0.133, 0.024), "m:" + SCRIBE_IRON, Vector3(-0.52, side * 0.36, 0))
+		m.tube("hand_l", clasp, clasp + Vector3(0.0, -0.061, -0.022), 0.009, 0.005, "e:" + SEAL_GLOW, 5)
+	_bevel(m, "spine", -0.253, [Vector2(-0.079, 1.421), Vector2(-0.011, 1.466), Vector2(0.046, 1.401),
+		Vector2(0.008, 1.312), Vector2(-0.059, 1.347)], 0.040, "m:" + SCRIBE_IRON, BONE)
+	m.tube("spine", Vector3(-0.021, 1.445, -0.302), Vector3(0.0, 1.347, -0.303), 0.014, 0.004, "e:" + SEAL_GLOW, 5)
+
+
+static func _tapered_cloth(m, joint: String, sections: Array, fabric: String, binding: String) -> void:
+	var face := SurfaceTool.new()
+	var seam := SurfaceTool.new()
+	face.begin(Mesh.PRIMITIVE_TRIANGLES)
+	seam.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var widths := [-1.0, -0.90, -0.42, 0.0, 0.42, 0.90, 1.0]
+	for index in range(sections.size() - 1):
+		var upper: Array = sections[index]
+		var lower: Array = sections[index + 1]
+		for column in range(widths.size() - 1):
+			var left: float = widths[column]
+			var right: float = widths[column + 1]
+			var surface := seam if column == 0 or column == widths.size() - 2 else face
+			_face(surface, _drape_point(upper, left), _drape_point(lower, left), _drape_point(lower, right), _drape_point(upper, right))
+	for pair in [[face, fabric], [seam, binding]]:
+		var surface: SurfaceTool = pair[0]
+		surface.generate_normals()
+		m._add(joint, Vector3.ZERO, Basis.IDENTITY, surface.commit(), pair[1], true)
+
+
+static func _drape_point(section: Array, across: float) -> Vector3:
+	var middle: Vector3 = section[0]
+	var width: float = section[1]
+	return middle + Vector3(across * width, 0.0, (absf(across) * 0.47 - 0.14 * cos(across * 8.0)) * width)

@@ -1,6 +1,9 @@
 extends SubViewportContainer
 
 const ChampionModel = preload("res://scripts/champions/model.gd")
+const Animations = preload("res://scripts/champions/animations.gd")
+const ArenaMatch = preload("res://scripts/arena_match.gd")
+const CombatFx = preload("res://scripts/combat_fx.gd")
 const SurfaceFinish = preload("res://scripts/champions/surface_finish.gd")
 const BACKDROP = preload("res://scripts/champions/portrait_backdrop.gdshader")
 const BASE_ANGLE := -0.24
@@ -31,6 +34,11 @@ var _motes: MultiMesh
 var _framing: Dictionary = {}
 var _motion_bounds: Dictionary = {}
 var _preview_key := ""
+var _spell_fx: CombatFx
+var _spell_preview: Dictionary = {}
+var _spell_cue: Node3D
+var _spell_contact := 0.0
+var _spell_elapsed := 0.0
 var _current_bounds := Vector3(1.0, 0.0, 2.4)
 var _patron_tint := Color("#d3a079")
 var _orbit_target := BASE_ANGLE
@@ -78,6 +86,9 @@ func _build_stage() -> void:
 	_stand = Node3D.new()
 	_stand.name = "Turntable"
 	viewport.add_child(_stand)
+	_spell_fx = CombatFx.new()
+	_spell_fx.name = "SpellPreview"
+	_stand.add_child(_spell_fx)
 	_build_dais()
 	_build_motes()
 
@@ -211,6 +222,7 @@ func show_champion(class_id: String, archetype: String) -> void:
 			return
 		_stand.remove_child(champion)
 		champion.queue_free()
+	_clear_spell_preview()
 	champion = ChampionModel.new()
 	_stand.add_child(champion)
 	champion.build(class_id, archetype)
@@ -228,6 +240,23 @@ func show_champion(class_id: String, archetype: String) -> void:
 
 func play_ability(slot: int) -> void:
 	_play_preview("cast_%d" % (slot + 1), 0.22)
+	if not is_instance_valid(champion):
+		return
+	var kit: Dictionary = ArenaMatch.CLASS_INFO[champion.champion]
+	if slot < 0 or slot >= kit.abilities.size():
+		return
+	var target: String = kit.abilities[slot].target
+	var destination := Vector2(0.72, -1.0) if target in ["enemy", "aim"] else Vector2.ZERO
+	_spell_preview = {
+		"class_id": champion.champion, "slot": slot, "team": 0,
+		"source_id": 0, "target_id": -1, "target_kind": target,
+		"origin": Vector2.ZERO, "source_after": Vector2.ZERO,
+		"destination": destination, "facing": Vector2.UP,
+		"hand_origin": _stand.to_local(champion.release_point(slot)),
+	}
+	_spell_contact = Animations.contact_time(champion.champion, slot)
+	_spell_elapsed = 0.0
+	_spell_cue = _spell_fx.play_windup(_spell_preview, _spell_contact)
 
 
 func play_ultimate() -> void:
@@ -239,6 +268,7 @@ func _play_preview(clip: String, wake: float) -> void:
 		return
 	if not champion.player.has_animation(clip):
 		return
+	_clear_spell_preview()
 	champion.player.stop()
 	champion.player.play(clip)
 	champion.player.advance(0.0)
@@ -248,8 +278,31 @@ func _play_preview(clip: String, wake: float) -> void:
 
 func idle() -> void:
 	if is_instance_valid(champion):
+		_clear_spell_preview()
 		champion.reset_motion()
 		_preview_framing("idle")
+
+
+func _clear_spell_preview() -> void:
+	_spell_preview = {}
+	_spell_cue = null
+	if is_instance_valid(_spell_fx):
+		_spell_fx.clear()
+
+
+func _update_spell_preview(delta: float) -> void:
+	if _spell_preview.is_empty():
+		return
+	var hand := _stand.to_local(champion.release_point(_spell_preview.slot))
+	_spell_elapsed += delta
+	if _spell_elapsed < _spell_contact:
+		if is_instance_valid(_spell_cue):
+			_spell_cue.position = hand
+		return
+	_spell_preview.hand_origin = hand
+	_spell_fx.play_cast(_spell_preview)
+	_spell_preview = {}
+	_spell_cue = null
 
 
 func _preview_framing(clip: String) -> void:
@@ -345,12 +398,15 @@ func set_active(active: bool) -> void:
 	set_process(active)
 	if active:
 		idle()
+	else:
+		_clear_spell_preview()
 
 
 func _process(delta: float) -> void:
 	var cast_light := 0.0
 	if is_instance_valid(champion):
 		cast_light = champion.advance_motion(delta)
+		_update_spell_preview(delta)
 		if not _preview_key.is_empty():
 			_follow_gesture(champion.player.current_animation_position / maxf(champion.player.current_animation_length, 0.01))
 	var focus_y := _camera.position.y - 0.36

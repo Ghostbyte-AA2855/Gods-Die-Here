@@ -47,6 +47,8 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 		var poses: Array[Dictionary] = []
 		for at in times:
 			var pose := _walk(name_of_clip, at, stride, archetype, model)
+			if name_of_clip == "idle":
+				AbilityMotion.idle_motif(class_id, at, pose)
 			if carries_vault_shield:
 				_align_vault_shield(pose, 0.24, 0.84)
 			poses.append(pose)
@@ -71,7 +73,7 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 		var record: Array = actions[slot]
 		var beats := AbilityMotion.beats(record)
 		var times := _times(20)
-		times.append_array(PackedFloat32Array([beats.x, beats.y, beats.z]))
+		times.append_array(PackedFloat32Array([beats.x, beats.y, AbilityMotion.contact_hold(record), beats.z]))
 		times.sort()
 		var poses: Array[Dictionary] = []
 		for at in times:

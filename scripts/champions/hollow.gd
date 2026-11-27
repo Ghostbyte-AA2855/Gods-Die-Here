@@ -18,6 +18,12 @@ const SALT := "85decb"
 const OBSIDIAN := "262135"
 const GLASS := "p:8067a0"
 const VIOLET := "cbb1fc"
+const CENSER_BRASS := "m:ba8253"
+const VIGIL_LINEN := "bf9a51"
+const CHAPEL_BURGUNDY := "682d38"
+const HUNT_GREEN := "425640"
+const VERDIGRIS := "m:578c84"
+const IRIS := "p:b9a5de"
 
 
 static func build(model, class_id: String) -> void:
@@ -30,6 +36,133 @@ static func build(model, class_id: String) -> void:
 			_avar(model)
 		"glassmage":
 			_vellis(model)
+
+
+static func _processional_vestments(m) -> void:
+	for side: float in [-1.0, 1.0]:
+		# The two wax-stained stole panels close over the chest and hang
+		# separately from the hips so they travel with the legs.
+		_folded_cloth(m, "spine", [
+			Vector4(side * 0.199, 1.48, 0.078, -0.175),
+			Vector4(side * 0.145, 1.36, 0.071, -0.261),
+			Vector4(side * 0.103, 1.16, 0.061, -0.272),
+			Vector4(side * 0.113, 0.99, 0.068, -0.259),
+		], VIGIL_LINEN, CHAPEL_BURGUNDY, CENSER_BRASS)
+		_folded_cloth(m, _side("thigh", side), [
+			Vector4(side * 0.113, 0.982, 0.068, -0.255),
+			Vector4(side * 0.135, 0.799, 0.079, -0.244),
+			Vector4(side * 0.150, 0.590 - (0.06 if side > 0.0 else 0.0), 0.047, -0.223),
+		], CHAPEL_BURGUNDY, SOOT, CENSER_BRASS)
+		for i in range(3):
+			var notch := Vector3(side * (0.078 + i * 0.016), 1.185 + i * 0.059, -0.304)
+			m.tube("spine", notch, notch + Vector3(side * 0.062, -0.034, -0.002), 0.008, 0.005, CENSER_BRASS, 5)
+		var hood := [Vector3(side * 0.113, 1.941, -0.112), Vector3(side * 0.183, 1.811, -0.158), Vector3(side * 0.182, 1.649, -0.197), Vector3(side * 0.133, 1.484, -0.18)]
+		_path(m, "head", hood, 0.027, 0.015, CHAPEL_BURGUNDY)
+		_folded_cloth(m, "mantle", [
+			Vector4(side * 0.30, 1.444, 0.16, 0.285),
+			Vector4(side * 0.44, 1.244, 0.18, 0.323),
+			Vector4(side * 0.429, 0.830, 0.153, 0.363),
+			Vector4(side * 0.471, 0.462, 0.073, 0.403),
+		], CHAPEL_BURGUNDY, SOOT, CENSER_BRASS)
+	var clasp := Vector3(0.0, 1.398, -0.325)
+	m.band("spine", clasp, 0.058, 0.012, CENSER_BRASS, 0.0, TAU, Vector3(PI * 0.5, 0.0, 0.0))
+	_crystal(m, "spine", clasp + Vector3.DOWN * 0.018, Vector3(0.0, 0.107, 0.02), 0.022, RELIQUARY, "e:ffc365")
+
+
+static func _hunters_mantle(m) -> void:
+	# One shoulder carries bark scales; the opposite shoulder is free for the draw.
+	for row in range(3):
+		for plate in range(4 - row):
+			var x := -0.25 - plate * 0.099 - row * 0.06
+			var y := 1.51 - row * 0.122 - plate * 0.040
+			var z := -0.100 - row * 0.040 + plate * 0.026
+			_plate(m, "upper_l", [[x - 0.08, y], [x - 0.015, y + 0.083], [x + 0.079, y + 0.015], [x + 0.056,y - 0.087], [x - 0.046, y - 0.107]], z, 0.055, MOSS if row == 0 else HUNT_GREEN)
+			m.tube("upper_l", Vector3(x, y + 0.044, z - 0.052), Vector3(x - 0.028, y - 0.068, z - 0.048), 0.010, 0.004, RAW_HIDE, 5)
+	_folded_cloth(m, "mantle", [
+		Vector4(-0.13, 1.498, 0.337, 0.226), Vector4(-0.206, 1.299, 0.405, 0.322),
+		Vector4(-0.264, 0.992, 0.39, 0.400), Vector4(-0.376, 0.651, 0.19, 0.473),
+		Vector4(-0.357, 0.360, 0.088, 0.465),
+	], HUNT_GREEN, ROOT_BARK, HORN)
+	_folded_cloth(m, "spine", [
+		Vector4(0.177, 1.42, 0.110, -0.244), Vector4(0.07, 1.279, 0.099, -0.265),
+		Vector4(-0.052, 1.131, 0.084, -0.321), Vector4(-0.19, 0.973, 0.054, -0.281),
+	], HUNT_GREEN, ROOT_BARK, HORN)
+	for side: float in [-1.0, 1.0]:
+		var brow := [Vector3(side * 0.131, 1.858, -0.207), Vector3(side * 0.148, 1.749, -0.258), Vector3(side * 0.103, 1.624, -0.279), Vector3(side * 0.061, 1.555, -0.244)]
+		_path(m, "head", brow, 0.020, 0.011, "m:73624b")
+		var shard := Vector3(side * 0.398, 2.02, 0.141)
+		m.band("head", shard, 0.040, 0.008, "m:73624b", 0.0, TAU, Vector3(0.08, 0.0, side * -0.43))
+
+
+static func _ferrymans_regalia(m) -> void:
+	for side: float in [-1.0, 1.0]:
+		# Enamel and salt-white plates overlap like a shell collar.
+		for lamella in range(4):
+			var outer := side * (0.19 + lamella * 0.064)
+			var y := 1.45 - lamella * 0.049
+			var z := -0.232 + lamella * 0.034
+			_plate(m, "spine", [[outer - side * 0.072,y - 0.07],[outer - side * 0.055,y + 0.045],[outer + side * 0.046,y + 0.08],[outer + side * 0.115,y - 0.006],[outer + side * 0.055,y - 0.085]], z, 0.047, DROWNED_BONE if lamella % 2 == 0 else VERDIGRIS)
+		_folded_cloth(m, "mantle", [
+			Vector4(side * 0.172,1.41,0.132,0.243), Vector4(side * 0.335,1.144,0.169,0.307),
+			Vector4(side * 0.431,0.78,0.148,0.361), Vector4(side * 0.51,0.45,0.074,0.405),
+			Vector4(side * 0.46,0.269,0.025,0.417),
+		], "285d55", TIDE, VERDIGRIS)
+		var cheek := [Vector3(side * 0.130,1.792,-0.184), Vector3(side * 0.125,1.672,-0.207), Vector3(side * 0.085,1.585,-0.238), Vector3(side * 0.019,1.545,-0.218)]
+		_path(m, "head", cheek, 0.020, 0.010, VERDIGRIS)
+		for i in range(3):
+			var coin := Vector3(side * (0.101 + i * 0.061), 0.914 - i * 0.052, -0.238 + i * 0.015)
+			m.tube(_side("thigh", side), coin + Vector3.FORWARD * 0.01, coin + Vector3.BACK * 0.012, 0.037, 0.037, "m:8f784b", 10)
+			m.band(_side("thigh", side), coin + Vector3.FORWARD * 0.013, 0.026, 0.004, CENSER_BRASS, 0, TAU, Vector3(PI * 0.5, 0, 0))
+
+
+static func _shattered_court(m) -> void:
+	# Formal coat panels frame a breastplate made from pointed mirror pieces.
+	for side: float in [-1.0, 1.0]:
+		var y_shift := 0.09 if side > 0.0 else 0.0
+		_folded_cloth(m, "mantle", [
+			Vector4(side * 0.243,1.49,0.137,0.221), Vector4(side * 0.321,1.207,0.163,0.285),
+			Vector4(side * 0.362,0.805,0.192,0.320), Vector4(side * 0.418,0.301 + y_shift,0.088,0.353),
+			Vector4(side * 0.409,0.183 + y_shift,0.023,0.367),
+		], "635074", OBSIDIAN, "m:8f7999")
+		for panel in range(3):
+			var x := side * (0.142 - panel * 0.024)
+			var y := 1.419 - panel * 0.126 - y_shift * 0.45
+			_plate(m, "spine", [[x - side * 0.091,y - 0.065],[x - side * 0.061,y + 0.049],[x + side * 0.119,y + 0.083],[x + side * 0.095,y - 0.056],[x + side * 0.031,y - 0.092]], -0.275 + 0.016 * panel, 0.027, IRIS if panel == 0 else GLASS)
+			m.tube("spine", Vector3(x, y - 0.047, -0.306 + panel * 0.016), Vector3(x + 0.067 * side, y + 0.022, -0.303 + panel * 0.016), 0.006, 0.004, "e:a689ce", 5)
+	for panel in range(5):
+		var angle := 0.46 + panel * 0.56
+		var center := Vector3(-0.64 * sin(angle),1.76 + 0.59 * cos(angle),0.39)
+		var axis := Vector3(-0.23 * sin(angle),0.25 * cos(angle),0.04)
+		_crystal(m, "ornament", center, axis, 0.053 if panel % 2 == 0 else 0.037, IRIS, "e:c599fa")
+
+
+static func _folded_cloth(m, joint: String, rows: Array, cloth: String, shade: String, thread: String) -> void:
+	var previous := PackedVector3Array()
+	var left_seam := []
+	var right_seam := []
+	var near := PackedVector3Array()
+	var far := PackedVector3Array()
+	for row: Vector4 in rows:
+		var fold := 0.051 * signf(row.w)
+		var current := PackedVector3Array([
+			Vector3(row.x - row.z, row.y, row.w),
+			Vector3(row.x + row.z * 0.21, row.y, row.w + fold),
+			Vector3(row.x + row.z, row.y, row.w + fold * 0.24),
+		])
+		left_seam.append(current[0])
+		right_seam.append(current[2])
+		if not previous.is_empty():
+			_cloth_strip(near, previous[0], previous[1], current[1], current[0])
+			_cloth_strip(far, previous[1], previous[2], current[2], current[1])
+		previous = current
+	m.facets(joint, near, cloth)
+	m.facets(joint, far, shade)
+	_path(m, joint, left_seam, 0.010, 0.007, thread)
+	_path(m, joint, right_seam, 0.010, 0.007, thread)
+
+
+static func _cloth_strip(buffer: PackedVector3Array, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
+	buffer.append_array(PackedVector3Array([a, b, c, a, c, d, c, b, a, d, c, a]))
 
 
 static func _ossa(m) -> void:
@@ -101,6 +234,7 @@ static func _ossa(m) -> void:
 			var point := Vector3(x + side * (crease - 1) * 0.072, 1.28 - crease * 0.015, 0.278)
 			m.tube("mantle", point, point + Vector3(side * 0.063, -0.78 + crease * 0.11, 0.008), 0.023, 0.006, "302630", 5)
 	_ossa_lantern(m)
+	_processional_vestments(m)
 
 
 static func _ossa_lantern(m) -> void:
@@ -201,6 +335,7 @@ static func _renn(m) -> void:
 		var tail := arrow + Vector3(0.129 + 0.016 * i, 0.178 + 0.021 * i, 0.031)
 		m.tube("spine", arrow, tail, 0.011, 0.007, "a58f5c", 6)
 		m.tube("spine", tail - Vector3(0.045, 0.042, 0.018), tail - Vector3(0.007, 0, 0.032), 0.026, 0.002, MOSS, 4)
+	_hunters_mantle(m)
 
 
 static func _renn_bow(m) -> void:
@@ -286,6 +421,7 @@ static func _avar(m) -> void:
 		if i % 2 == 0:
 			_orb(m, "head", salt, Vector3(0.036, 0.031, 0.035), "b3ac82")
 	_avar_trident(m)
+	_ferrymans_regalia(m)
 
 
 static func _avar_trident(m) -> void:
@@ -378,6 +514,7 @@ static func _vellis(m) -> void:
 	_crystal(m, "ornament", Vector3(0.093, 2.038, 0.28), Vector3(-0.10, 0.333, 0.047), 0.121, "p:a597c4", "e:c599fa")
 	for i in range(3):
 		_crystal(m, "hand_r", Vector3(0.57 + i * 0.061, 0.88 + i * 0.07, -0.13 - i * 0.025), Vector3(0.061 + i * 0.016, 0.12 + 0.02 * i, -0.04), 0.027, GLASS, "e:e1c6ff")
+	_shattered_court(m)
 
 
 static func radians_for_shard(index: int) -> float:

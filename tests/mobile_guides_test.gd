@@ -160,8 +160,14 @@ func _verify_relic_and_ultimate(arena) -> void:
 	arena.hud.selected_map = "kiln"
 	arena.hud.roster_buttons["forgecaller"].pressed.emit()
 	_check("Godfall Hammer" in arena.hud._ultimate_preview.text, "The selected class exposes its named ultimate preview")
+	arena.hud._select_ability(1)
+	var preview: SubViewportContainer = arena.hud.champion_preview
+	_check(not preview._spell_preview.is_empty() and is_instance_valid(preview._spell_cue), "A regular lobby ability starts the spell cue on the rig")
+	preview._process(preview._spell_contact + 0.04)
+	_check(preview._spell_preview.is_empty() and preview._spell_fx.get_child_count() > 1, "Lobby spell previews show the release as well as the animation")
 	arena.hud._ultimate_preview.pressed.emit()
 	_check("incandescent hammer" in arena.hud._ability_info.text, "The ultimate preview explains the ability's impact and counterplay")
+	_check(preview._spell_fx.get_child_count() == 0, "Selecting a new move clears the outgoing preview effect")
 	arena._start("forgecaller")
 	arena.view.reduced_motion = false
 	var game = arena.game

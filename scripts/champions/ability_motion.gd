@@ -235,9 +235,114 @@ const GESTURES := {
 	"molt":      [65,  43, 57, 52, 33, 46, -41, -19, -5, 39, 31],
 }
 
+# Hip loading, shoulder draw, planted stance, and recovery weight. The values
+# are fractions so the same rig can read as armored, nimble, or lightly held.
+const PERFORMANCE := {
+	"breakwater": Vector4(0.95, 0.48, 1.00, 0.98),
+	"threadkeeper": Vector4(0.48, 0.94, 0.32, 0.32),
+	"echo_duelist": Vector4(0.81, 1.00, 0.26, 0.61),
+	"forgecaller": Vector4(1.00, 0.65, 0.99, 1.00),
+	"lamplighter": Vector4(0.52, 0.45, 0.74, 0.48),
+	"longwatch": Vector4(0.41, 1.00, 0.87, 0.40),
+	"sluicecaller": Vector4(0.72, 0.87, 0.52, 0.80),
+	"glassmage": Vector4(0.38, 0.91, 0.55, 0.32),
+	"blood_cantor": Vector4(0.59, 0.77, 0.67, 0.58),
+	"bellwarden": Vector4(0.89, 0.62, 1.00, 1.00),
+	"ash_dancer": Vector4(0.95, 0.94, 0.29, 0.64),
+	"winter_scribe": Vector4(0.49, 0.96, 0.81, 0.50),
+	"dream_shepherd": Vector4(0.50, 0.65, 0.49, 0.44),
+	"chainrunner": Vector4(1.00, 0.95, 0.68, 0.88),
+	"coilwright": Vector4(0.56, 0.76, 0.80, 0.72),
+	"duskmoth": Vector4(0.79, 0.91, 0.19, 0.59),
+}
+
+# The relaxed motion makes the hand carrying the class's equipment read even
+# when its feet are still. Values are small angles in local rig space.
+const READY_MOTIFS := {
+	"breakwater": ["upper_l", Vector3(-4, 5, -2), "spine", Vector3(4, -5, 2)],
+	"threadkeeper": ["hand_r", Vector3(-5, 8, 10), "fore_l", Vector3(-5, -8, 3)],
+	"echo_duelist": ["hand_l", Vector3(-4, -6, 10), "hand_r", Vector3(6, -3, 11)],
+	"forgecaller": ["upper_r", Vector3(5, 6, -5), "spine", Vector3(5, -7, 1)],
+	"lamplighter": ["fore_r", Vector3(-7, 5, 2), "hand_r", Vector3(7, -5, 4)],
+	"longwatch": ["upper_l", Vector3(4, -7, -2), "head", Vector3(-1, 10, 3)],
+	"sluicecaller": ["fore_r", Vector3(5, 7, 5), "hand_r", Vector3(2, -11, -6)],
+	"glassmage": ["ornament", Vector3(-4, 11, 4), "hand_r", Vector3(-5, -8, 6)],
+	"blood_cantor": ["fore_r", Vector3(9, -5, 2), "head", Vector3(-6, 3, -4)],
+	"bellwarden": ["upper_r", Vector3(7, -5, 4), "hand_r", Vector3(-9, -4, -6)],
+	"ash_dancer": ["hand_l", Vector3(5, -5, 8), "spine", Vector3(-2, 7, 4)],
+	"winter_scribe": ["hand_r", Vector3(5, 3, -7), "fore_l", Vector3(9, 3, 4)],
+	"dream_shepherd": ["fore_r", Vector3(3, -7, -6), "ornament", Vector3(8, -5, 5)],
+	"chainrunner": ["fore_r", Vector3(-9, -4, 5), "hand_l", Vector3(2, 6, -7)],
+	"coilwright": ["hand_l", Vector3(-5, 6, 8), "hand_r", Vector3(4, -5, -7)],
+	"duskmoth": ["mantle", Vector3(6, -5, 6), "ornament", Vector3(-8, -5, 6)],
+}
+
+# Corrections in mirrored shoulder space: loaded lead arm, loaded support,
+# catching lead forearm, and catching torso. Contact itself stays authored.
+const SIGNATURES := {
+	# The guard crouches behind the door and keeps pressure on it after impact.
+	"breakwater": {3: [Vector3(-16, -8, 19), Vector3(22, 4, 7), Vector3(-10, 14, -10), Vector3(-6, -16, 2)],
+		7: [Vector3(18, -10, -24), Vector3(27, 10, 3), Vector3(13, -6, -6), Vector3(-11, -4, 3)]},
+	# Needle hand follows a small stitch while loose thread is fed by the other.
+	"threadkeeper": {1: [Vector3(20, -12, -25), Vector3(-9, 13, 13), Vector3(19, -16, 15), Vector3(4, -8, 4)],
+		3: [Vector3(23, -8, -21), Vector3(17, 11, -26), Vector3(12, -14, -12), Vector3(3, 3, -6)]},
+	# Retrace cocks the returning blade over the shoulder and finishes cross-body.
+	"echo_duelist": {1: [Vector3(-10, -13, 27), Vector3(4, 12, -18), Vector3(21, 8, -29), Vector3(-7, -22, 7)],
+		4: [Vector3(36, -23, 20), Vector3(-16, 8, -25), Vector3(-5, -16, 24), Vector3(7, -26, -13)]},
+	# Hammerfall cocks the tool high; the off arm catches and steadies its weight.
+	"forgecaller": {4: [Vector3(38, -13, -19), Vector3(10, 17, 16), Vector3(18, -14, 20), Vector3(-20, 7, 5)],
+		7: [Vector3(22, -20, 16), Vector3(33, 15, -14), Vector3(20, -16, -11), Vector3(-18, -14, 8)]},
+	# The support hand catches the lantern chain and cushions the hanging weight.
+	"lamplighter": {2: [Vector3(-11, -13, -19), Vector3(23, 13, -12), Vector3(17, -16, 7), Vector3(-11, 4, 1)],
+		5: [Vector3(16, 3, -24), Vector3(24, -10, -20), Vector3(13, 18, -10), Vector3(-5, -13, -4)]},
+	# Volley draws across the cheek and the release arm fans across the body.
+	"longwatch": {0: [Vector3(12, -11, -8), Vector3(5, 13, -14), Vector3(5, 16, -18), Vector3(-4, -13, 3)],
+		5: [Vector3(12, -15, -8), Vector3(27, -19, -14), Vector3(17, 20, -22), Vector3(-6, -21, 5)]},
+	# Riptide gathers the pole in full rotation, then holds the low follow-through.
+	"sluicecaller": {5: [Vector3(23, -22, 23), Vector3(6, -13, -29), Vector3(9, -22, 12), Vector3(-13, -19, 8)],
+		7: [Vector3(23, -16, 30), Vector3(9, 22, -21), Vector3(24, -24, 13), Vector3(-7, -29, 11)]},
+	# A closed crystal cage opens from the wrists and ends with split palms.
+	"glassmage": {4: [Vector3(12, -16, -24), Vector3(24, 14, -31), Vector3(9, -7, 26), Vector3(-4, -10, -6)],
+		7: [Vector3(10, -13, -20), Vector3(7, 9, -18), Vector3(13, 9, 15), Vector3(-3, -13, 5)]},
+	# Offerings stay close to the ribs until the chalice is extended and caught.
+	"blood_cantor": {1: [Vector3(23, -14, -21), Vector3(19, 12, -20), Vector3(9, 8, -22), Vector3(-11, -11, 6)],
+		7: [Vector3(13, -13, -19), Vector3(24, 6, -17), Vector3(20, 16, -14), Vector3(-14, -18, 6)]},
+	# The bell lags the fist and throws the shoulder back when it is caught.
+	"bellwarden": {2: [Vector3(27, -18, 24), Vector3(4, 17, -19), Vector3(25, 14, -24), Vector3(-14, -16, 8)],
+		7: [Vector3(24, -24, 34), Vector3(19, 8, -22), Vector3(22, 18, -19), Vector3(-13, -22, 5)]},
+	# Two hook blades coil around the chest and open into an opposite sweep.
+	"ash_dancer": {2: [Vector3(3, -23, 29), Vector3(12, 17, -29), Vector3(29, 7, -19), Vector3(-9, -20, 9)],
+		7: [Vector3(20, -21, 36), Vector3(9, 18, -30), Vector3(9, 16, -26), Vector3(-11, -25, 7)]},
+	# The free arm holds the iron book clear of the quill's broad flourishes.
+	"winter_scribe": {1: [Vector3(20, -25, -17), Vector3(15, -14, -23), Vector3(17, -12, 15), Vector3(-12, -14, 4)],
+		7: [Vector3(29, -26, 17), Vector3(16, 18, -25), Vector3(21, -19, -12), Vector3(-16, -14, 7)]},
+	# Brace the floating cage with the free arm before the knees catch its weight.
+	"dream_shepherd": {2: [Vector3(19, -9, -23), Vector3(23, 19, -20), Vector3(17, -12, 14), Vector3(3, -7, -4)],
+		6: [Vector3(24, -14, -16), Vector3(16, 12, -20), Vector3(16, -8, 13), Vector3(-14, -12, 6)]},
+	# Hookline draws an extra length of chain, then braces against the return tug.
+	"chainrunner": {1: [Vector3(24, -25, 32), Vector3(21, 17, -24), Vector3(30, -11, -18), Vector3(-12, -20, 5)],
+		6: [Vector3(33, -10, 18), Vector3(23, 18, -20), Vector3(24, 14, -21), Vector3(8, -20, 8)]},
+	# Fork Spark anchors the gauntlet at the opposite wrist before separating.
+	"coilwright": {2: [Vector3(18, -24, -21), Vector3(28, 21, -25), Vector3(19, 18, 16), Vector3(-4, -13, 7)],
+		7: [Vector3(21, -18, -20), Vector3(17, 24, -16), Vector3(16, 13, 19), Vector3(-11, -17, 5)]},
+	# Fold the wings tight before opening the attack and duck under their return.
+	"duskmoth": {3: [Vector3(21, -20, 27), Vector3(16, 19, 12), Vector3(9, 16, -17), Vector3(8, -19, 9)],
+		5: [Vector3(21, -17, 38), Vector3(27, 24, -24), Vector3(22, 17, -28), Vector3(-7, -19, 12)]},
+}
+
 
 static func actions(class_id: String) -> Array:
 	return CLIPS.get(class_id, [])
+
+
+static func idle_motif(class_id: String, at: float, pose: Dictionary) -> void:
+	var motif: Array = READY_MOTIFS[class_id]
+	# Keep both ends identical to the ready pose and stagger the carried piece
+	# behind its arm so the weapon does not rotate in lockstep with the body.
+	var cycle := TAU * at
+	var envelope := pow(sin(cycle * 0.5), 2.0)
+	pose[motif[0]] += (motif[1] as Vector3) * envelope * sin(cycle) * (PI / 180.0)
+	pose[motif[2]] += (motif[3] as Vector3) * envelope * sin(cycle - 0.74) * (PI / 180.0)
 
 
 static func sample(class_id: String, slot: int, normalized_time: float) -> Dictionary:
@@ -263,12 +368,16 @@ static func sample(class_id: String, slot: int, normalized_time: float) -> Dicti
 		_shape_shield_check(loaded, contact_pose, follow, slot == 7)
 	elif class_id == "ash_dancer" and slot == 7:
 		_shape_furnace_turn(loaded, contact_pose, follow)
-	var pose := _body_pose(t, timing, loaded, contact_pose, follow)
+	_shape_performance(class_id, slot, lead, family, loaded, follow)
+	var hold := contact_hold(clip)
+	var pose := _body_pose(t, timing, hold, loaded, contact_pose, follow)
 	# Free ends lag the body and are still catching up during the recovery.
-	var drift := _body_pose(maxf(t - 0.063 * sin(t * PI), 0.0), timing, loaded, contact_pose, follow)
-	var echo := sin(smoothstep(contact, 0.95, t) * 2.0 * PI) * smoothstep(contact, timing.z, t)
-	pose["mantle"] = drift.mantle + Vector3(-11.0, 7.0 * lead, -8.0 * lead) * echo
-	pose["ornament"] = drift.ornament + Vector3(8.0, -13.0 * lead, 11.0 * lead) * echo
+	var profile: Vector4 = PERFORMANCE[class_id]
+	var late := maxf(0.0, t - lerpf(0.051, 0.105, profile.w) * sin(t * PI))
+	var drift := _body_pose(late, timing, hold, loaded, contact_pose, follow)
+	var echo := sin(smoothstep(hold, 0.97, t) * TAU) * smoothstep(hold, timing.z, t)
+	pose["mantle"] = drift.mantle + Vector3(-13.0, 11.0 * lead, -12.0 * lead) * echo
+	pose["ornament"] = drift.ornament + Vector3(10.0, -19.0 * lead, 14.0 * lead) * echo
 	var offset: Vector3 = pose.offset
 	for name in pose:
 		pose[name] = (pose[name] as Vector3) * (PI / 180.0) * force
@@ -279,6 +388,42 @@ static func sample(class_id: String, slot: int, normalized_time: float) -> Dicti
 		var emphasis := 1.0 if slot == 7 else (0.33 if slot == 0 else 0.65)
 		pose["shard_spread"] = Vector3.ONE + Vector3(0.23, 0.15, 0.20) * (scatter - gather * 0.53) * emphasis
 	return pose
+
+
+static func _shape_performance(class_id: String, slot: int, lead: int, family: String, loaded: Dictionary, follow: Dictionary) -> void:
+	var profile: Vector4 = PERFORMANCE[class_id]
+	var leading := "_r" if lead > 0 else "_l"
+	var trailing := "_l" if lead > 0 else "_r"
+	var side := float(lead)
+	var mirror := Vector3(1.0, side, side)
+	var braced := family in ["shield", "cradle", "kneel", "plant", "sew", "threadwork", "write", "open_book"]
+	var mobile := family in ["charge", "lunge", "surf", "kick", "evade", "rewind", "wheel", "windmill"]
+	var stance := profile.z * (0.67 if mobile else 1.0)
+	loaded.offset += Vector3(-0.042 * side * profile.x, -0.033 * stance, 0.045 * profile.x)
+	loaded.pelvis += Vector3(6.0 * stance, -12.0 * profile.x * side, -6.0 * stance * side)
+	loaded.spine += Vector3(5.0 * stance, -21.0 * profile.y * side, 7.0 * profile.x * side)
+	loaded.head += Vector3(-5.0 * stance, 17.0 * profile.y * side, -5.0 * profile.x * side)
+	loaded["fore" + trailing] += Vector3(13.0 * stance, -8.0 * profile.y, 7.0) * mirror
+	loaded["thigh" + trailing] += Vector3(13.0 * stance, 3.0 * side, -8.0 * stance * side)
+	loaded["shin" + trailing].x -= 14.0 * stance
+	loaded["upper" + leading] += Vector3(0.0, -12.0 * profile.y, 14.0 * profile.y) * mirror
+	follow.offset += Vector3(0.058 * side * profile.w, -0.039 * stance, -0.043 * profile.x)
+	follow.pelvis += Vector3(-6.0 * stance, 16.0 * profile.w * side, 6.0 * stance * side)
+	follow.spine += Vector3(-11.0 * profile.w, 15.0 * profile.y * side, -7.0 * profile.x * side)
+	follow.head += Vector3(10.0 * profile.w, -16.0 * profile.y * side, 4.0 * profile.x * side)
+	follow["fore" + leading] += Vector3(12.0 * profile.w, 8.0 * profile.y, -7.0 * profile.w) * mirror
+	follow["thigh" + leading].x += 15.0 * stance
+	follow["shin" + leading].x -= 16.0 * stance
+	if braced:
+		# Sustain support under the cast hand instead of throwing the elbow wide.
+		follow["upper" + trailing] += Vector3(13.0, 8.0 * side, -16.0 * side)
+		follow["fore" + trailing].x += 14.0
+	var signature: Array = SIGNATURES[class_id].get(slot, [])
+	if not signature.is_empty():
+		loaded["upper" + leading] += (signature[0] as Vector3) * mirror
+		loaded["upper" + trailing] += (signature[1] as Vector3) * mirror
+		follow["fore" + leading] += (signature[2] as Vector3) * mirror
+		follow.spine += (signature[3] as Vector3) * mirror
 
 
 static func _shape_hammerfall(loaded: Dictionary, contact: Dictionary, follow: Dictionary) -> void:
@@ -356,7 +501,14 @@ static func beats(clip: Array) -> Vector3:
 	return Vector3(contact * 0.52, contact, follow)
 
 
-static func _body_pose(t: float, timing: Vector3, loaded: Dictionary, contact: Dictionary, follow: Dictionary) -> Dictionary:
+static func contact_hold(clip: Array) -> float:
+	var duration: float = clip[1]
+	var family: String = clip[0]
+	var hang := 0.037 if family in ["hew", "shield", "plant", "kneel", "fracture", "toll", "threadwork"] else 0.019
+	return float(clip[2]) + hang / duration
+
+
+static func _body_pose(t: float, timing: Vector3, hold: float, loaded: Dictionary, contact: Dictionary, follow: Dictionary) -> Dictionary:
 	var from: Dictionary
 	var to: Dictionary
 	var mix: float
@@ -367,11 +519,13 @@ static func _body_pose(t: float, timing: Vector3, loaded: Dictionary, contact: D
 	elif t <= timing.y:
 		from = loaded
 		to = contact
-		mix = pow(inverse_lerp(timing.x, timing.y, t), 1.70)
+		mix = pow(inverse_lerp(timing.x, timing.y, t), 1.56)
 	elif t <= timing.z:
 		from = contact
 		to = follow
-		mix = 1.0 - pow(1.0 - inverse_lerp(timing.y, timing.z, t), 2.6)
+		var gather := smoothstep(timing.y, hold, t) * 0.16
+		var recover := smoothstep(hold, timing.z, t)
+		mix = gather + 0.84 * recover
 	else:
 		from = follow
 		to = {}

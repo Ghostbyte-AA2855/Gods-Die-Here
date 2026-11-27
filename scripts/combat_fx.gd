@@ -13,25 +13,30 @@ const STYLES = {
 	"glassmage": ["a4f7ea", "prism", ["bolt","field","dash","ward","brand","ward","thread","burst"]],
 	"blood_cantor": ["f16b92", "blood", ["thread","heal","thread","ward","interrupt","rally","sweep","heal"]],
 	"bellwarden": ["f2ca83", "bell", ["crush","ward","wave","wave","dash","interrupt","ward","rally"]],
-	"ash_dancer": ["ff8548", "ember", ["cut","dash","cut","sweep","interrupt","ward","dash","sweep"]],
+	"ash_dancer": ["ff8548", "ash", ["cut","dash","cut","sweep","interrupt","ward","dash","sweep"]],
 	"winter_scribe": ["aecdfc", "frost", ["needle","field","burst","dash","ward","brand","interrupt","field"]],
 	"dream_shepherd": ["deb2ff", "dream", ["bolt","heal","ward","dash","cleanse","brand","field","rally"]],
 	"chainrunner": ["b5b9dd", "links", ["cut","chain","dash","chain","sweep","dash","thread","crush"]],
 	"coilwright": ["f5da73", "spark", ["zap","brand","zap","zap","dash","ward","interrupt","field"]],
 	"duskmoth": ["f0a6e5", "moth", ["cut","swarm","dash","ward","needle","swarm","cleanse","burst"]],
 }
+const CRESTS := ["plate", "thread", "echo", "ember", "flame", "fletch", "water", "prism", "blood", "bell", "ash", "frost", "dream", "links", "spark", "moth"]
+const SUPPORT_PATTERNS := ["heal", "ward", "cleanse", "rally"]
 const TEAM_ACCENTS = [Color("74f4ef"), Color("ff9070")]
 const MAX_TRANSIENTS := 22
 const MAX_BACKGROUND_ATTACKS := 7
 const SPARK_MESH := preload("res://scripts/fx/shard.tres")
 const RIBBON_SHADER := preload("res://scripts/fx/energy_ribbon.gdshader")
+const CREST_SHADER := preload("res://scripts/fx/spell_crest.gdshader")
 
 var _spark_surface := StandardMaterial3D.new()
+var _crest_plane := QuadMesh.new()
 
 
 func _ready() -> void:
 	_spark_surface.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_spark_surface.vertex_color_use_as_albedo = true
+	_crest_plane.size = Vector2(2.0, 2.0)
 
 
 func clear() -> void:
@@ -39,28 +44,29 @@ func clear() -> void:
 		remove_child(effect)
 		effect.queue_free()
 
-
-func play_windup(event: Dictionary, delay: float) -> void:
+func play_windup(event: Dictionary, delay: float) -> Node3D:
 	var style: Array = STYLES.get(event.class_id, [])
 	var slot: int = event.slot
-	if style.is_empty() or slot <= 0 or slot >= 8 or delay < 0.055:
-		return
-	var cast := _begin_cast(3 if _features_player(event) else 2)
+	var foreground := _features_player(event)
+	if style.is_empty() or slot < 0 or slot >= 8 or delay < 0.055 or (slot == 0 and not foreground):
+		return null
+	var cast := _begin_cast(3 if foreground else 2)
 	if cast == null:
-		return
+		return null
 	var tint := Color(str(style[0]))
 	var hand: Vector3 = event.get("hand_origin", _floor_point(event.origin) + Vector3.UP)
 	cast.position = hand
-	var ink := _ink(tint.lightened(0.35), 0.77)
-	# Converging wedges draw attention to the casting hand during the windup.
-	for shard in 3:
-		var angle := shard * TAU / 3.0
-		_ribbon(cast, _arc(Vector3.ZERO, 0.54, angle - 0.56, angle + 0.56, 7), 0.24, ink, 0.9)
-	cast.rotate_x(PI / 5.0)
+	var supportive: bool = style[2][slot] in SUPPORT_PATTERNS or event.get("target_kind") == "ally"
+	var accent: Color = TEAM_ACCENTS[clampi(event.get("team", 0), 0, 1)]
+	var radius := 0.64 if slot > 0 else 0.46
+	var seal := _crest(cast, Vector3.UP * 0.06, style[1], tint, accent, radius, true, supportive)
+	seal.rotation.x = -0.62
+	var ink := seal.material_override as ShaderMaterial
 	var motion := cast.create_tween().set_parallel()
-	motion.tween_property(cast, "scale", Vector3.ONE * 0.28, delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	motion.tween_property(cast, "rotation:y", 1.8, delay)
-	_fade(cast, [ink], delay * 0.55, delay)
+	motion.tween_property(seal, "scale", Vector3.ONE * radius * 1.10, delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	motion.tween_method(func(at: float): ink.set_shader_parameter("progress", at), 0.0, 1.0, delay)
+	_fade(cast, [ink], delay * 0.72, delay)
+	return cast
 
 
 func play_cast(event: Dictionary) -> void:
@@ -80,7 +86,7 @@ func play_cast(event: Dictionary) -> void:
 	var tint := Color(str(style[0]))
 	var accent: Color = TEAM_ACCENTS[clampi(event.team, 0, 1)]
 	var origin := _floor_point(event.origin)
-	var landing := _floor_point(event.source_after)
+	var landing := _floor_point(event.get("source_after", event.origin))
 	var destination := _floor_point(event.destination)
 	var direction := origin.direction_to(destination)
 	if direction.is_zero_approx():
@@ -94,6 +100,9 @@ func play_cast(event: Dictionary) -> void:
 	if background_attack:
 		_background_attack(cast, origin, hand, destination + chest, direction, pattern, ink)
 		return
+	cast.set_meta("tint", tint)
+	cast.set_meta("side", accent)
+	cast.set_meta("support", pattern in SUPPORT_PATTERNS or event.get("target_kind") == "ally")
 	var rim := _ink(accent, 0.78)
 	var highlight := _ink(tint.lightened(0.26), 0.96)
 	var strength := 1.57 if strong else (1.15 if slot > 0 else 0.86)
@@ -103,7 +112,7 @@ func play_cast(event: Dictionary) -> void:
 		_release_flash(cast, hand, direction, strength, highlight)
 	match pattern:
 		"cut", "sweep", "crush":
-			_weapon_arc(cast, origin, direction, pattern, strength, ink)
+			_weapon_arc(cast, origin, direction, pattern, strength, ink, hand, motif, highlight)
 			if pattern == "crush":
 				_ripple(cast, destination, 1.07 * strength, rim, 0.36)
 		"dash":
@@ -127,18 +136,18 @@ func play_cast(event: Dictionary) -> void:
 			impact_delay = _wave(cast, origin, destination, direction, strength, ink, highlight)
 		"ward":
 			_ward(cast, destination, motif, strength, ink, rim)
-			_spark_fan(cast, destination + Vector3.UP * 0.2, Vector3.UP, tint, 8, 0.34, 0.7)
+			_spark_fan(cast, destination + Vector3.UP * 0.2, Vector3.UP, tint, 8, 0.34, 0.7, motif)
 		"heal", "cleanse", "rally":
 			if pattern == "heal" and hand.distance_squared_to(destination + chest) > 0.35:
 				_tether(cast, hand, destination + chest, "thread", motif, 0.88, ink, highlight)
-			_benediction(cast, destination, motif, strength, ink, highlight)
-			_spark_fan(cast, destination + Vector3.UP * 0.23, Vector3.UP, tint, 9 if strong else 5, 0.36, 0.75)
+			_benediction(cast, destination, motif, strength, ink)
+			_spark_fan(cast, destination + Vector3.UP * 0.23, Vector3.UP, tint, 9 if strong else 5, 0.36, 0.75, motif)
 		"field", "brand", "burst", "interrupt", "swarm":
 			_ritual(cast, destination, pattern, motif, strength, ink, highlight)
 	if strong and pattern in ["burst", "rally", "sweep", "wave", "field"]:
 		_ripple(cast, destination, 1.45, rim, 0.38)
 	if pattern in ["cut", "sweep", "crush", "dash", "bolt", "needle", "volley", "zap", "chain", "wave", "interrupt", "burst"] or (pattern == "thread" and event.get("target_kind", "enemy") == "enemy"):
-		_schedule_impacts(cast, event, direction, strength, tint, highlight, impact_delay)
+		_schedule_impacts(cast, event, direction, strength, tint, highlight, impact_delay, motif)
 	_fade(cast, [ink, highlight, rim], maxf(0.18 if slot > 0 else 0.11, impact_delay + 0.11), duration)
 
 
@@ -197,14 +206,23 @@ func _release_flash(parent: Node3D, hand: Vector3, direction: Vector3, strength:
 	flicker.tween_callback(launch.queue_free)
 
 
-func _weapon_arc(parent: Node3D, position: Vector3, direction: Vector3, pattern: String, strength: float, ink: Material) -> void:
-	var swing := _pivot(parent, position + Vector3.UP * 1.22)
+func _weapon_arc(parent: Node3D, position: Vector3, direction: Vector3, pattern: String, strength: float, ink: Material, hand := Vector3.INF, motif := "", edge: Material = null) -> void:
+	var anchor := position + Vector3.UP * 1.22
+	if hand != Vector3.INF:
+		anchor += (hand - anchor).limit_length(0.64) * 0.54
+	var swing := _pivot(parent, anchor)
 	var yaw := atan2(-direction.x, -direction.z)
 	var spread: float = {"sweep": 2.15, "cut": 1.32, "crush": 0.89}[pattern]
 	var radius := 1.74 * strength
 	swing.rotation = Vector3(-1.02 if pattern == "crush" else 0.19, yaw - 0.73, -0.24)
 	swing.scale = Vector3.ONE * 0.74
 	_ribbon(swing, _arc(Vector3.ZERO, radius, -spread, spread, 20), 0.80 * strength, ink, 0.97)
+	if edge != null:
+		var lift := 0.26 if pattern == "crush" else 0.13
+		_ribbon(swing, _arc(Vector3.UP * lift, radius * 1.04, -spread * 0.84, spread * 0.70, 13), 0.28 * strength, edge, 0.95)
+		if motif in ["ash", "echo"]:
+			var return_cut := _arc(Vector3(0, -0.32, 0.27), radius * 0.81, -spread * 0.76, spread * 0.86, 12)
+			_ribbon(swing, return_cut, 0.34 * strength, ink, 0.91)
 	var follow := swing.create_tween().set_parallel()
 	follow.tween_property(swing, "scale", Vector3.ONE * 1.13, 0.29).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	follow.tween_property(swing, "rotation:y", yaw + 0.74, 0.29).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
@@ -214,7 +232,7 @@ func _weapon_arc(parent: Node3D, position: Vector3, direction: Vector3, pattern:
 
 func _dash(parent: Node3D, origin: Vector3, landing: Vector3, destination: Vector3, motif: String, ink: Material, core: Material) -> void:
 	if origin.distance_squared_to(landing) < 0.04:
-		_sigil(parent, destination, 0.73, motif, ink)
+		_seal_ground(parent, destination, 0.73, motif, 0.45)
 		return
 	var route := origin.direction_to(landing)
 	var side := route.cross(Vector3.UP)
@@ -240,7 +258,7 @@ func _projectiles(parent: Node3D, start: Vector3, finish: Vector3, direction: Ve
 		var bolt := _pivot(parent, departure)
 		var stream := PackedVector3Array([tail, tail * 0.60 + Vector3.UP * 0.08, Vector3.ZERO, tip])
 		_ribbon(bolt, stream, 0.60 * strength, ink, 0.57)
-		if motif in ["ember", "flame", "fletch"]:
+		if motif in ["ember", "flame", "ash", "fletch"]:
 			for wing in [-0.30, 0.30]:
 				_ribbon(bolt, PackedVector3Array([tail + side * wing, tail * 0.45 + side * wing * 1.2, tip]), 0.19 * strength, ink, 1.0)
 		else:
@@ -258,7 +276,7 @@ func _projectiles(parent: Node3D, start: Vector3, finish: Vector3, direction: Ve
 
 func _tether(parent: Node3D, start: Vector3, finish: Vector3, pattern: String, motif: String, strength: float, ink: Material, core: Material) -> float:
 	if start.distance_squared_to(finish) <= 0.016:
-		_sigil(parent, finish - Vector3.UP * 0.68, 0.55, motif, ink)
+		_seal_ground(parent, finish - Vector3.UP * 0.68, 0.55, motif, 0.45)
 		return 0.055
 	var axis := start.direction_to(finish)
 	var across := axis.cross(Vector3.UP).normalized()
@@ -328,10 +346,10 @@ func _ward(parent: Node3D, at: Vector3, motif: String, strength: float, ink: Mat
 	var deploy := shell.create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	deploy.tween_property(shell, "scale", Vector3.ONE, 0.23)
 	deploy.tween_property(shell, "rotation:y", 0.65, 0.32)
-	_sigil(parent, at, 0.77 * strength, motif, rim)
+	_seal_ground(parent, at, 0.77 * strength, motif, 0.50)
 
 
-func _benediction(parent: Node3D, at: Vector3, motif: String, strength: float, ink: Material, core: Material) -> void:
+func _benediction(parent: Node3D, at: Vector3, motif: String, strength: float, ink: Material) -> void:
 	var ribbons := _pivot(parent, at)
 	for i in 3:
 		var start := i * TAU / 3.0
@@ -346,11 +364,14 @@ func _benediction(parent: Node3D, at: Vector3, motif: String, strength: float, i
 	var ascend := ribbons.create_tween().set_parallel()
 	ascend.tween_property(ribbons, "scale", Vector3(1.1, 1.2, 1.1), 0.30).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	ascend.tween_property(ribbons, "rotation:y", 1.37, 0.40)
-	_sigil(parent, at, 0.89 * strength, motif, core)
+	_seal_ground(parent, at, 0.89 * strength, motif, 0.50)
 
 
 func _ritual(parent: Node3D, at: Vector3, pattern: String, motif: String, strength: float, ink: Material, core: Material) -> void:
-	_sigil(parent, at, (0.63 if pattern == "brand" else 1.05) * strength, motif, ink)
+	_seal_ground(parent, at, (0.63 if pattern == "brand" else 1.05) * strength, motif, 0.50)
+	if pattern in ["field", "burst"] and motif in ["prism", "frost"]:
+		_glass_growth(parent, at, strength, motif == "prism")
+		return
 	match pattern:
 		"interrupt":
 			var impact := at + Vector3.UP * 1.40
@@ -361,7 +382,12 @@ func _ritual(parent: Node3D, at: Vector3, pattern: String, motif: String, streng
 			for n in 6:
 				var angle := TAU * n / 6.0
 				var outward := Vector3(cos(angle), 0.23 + 0.36 * (n % 2), sin(angle)) * strength
-				_ribbon(shock, PackedVector3Array([outward * 0.14, outward * 0.64 + Vector3.UP * 0.20, outward * 1.08]), 0.46, ink, 0.78)
+				if motif == "moth":
+					var tail := Vector3(-sin(angle), 0.0, cos(angle)) * 0.40 * strength
+					var body := outward * 0.62
+					_ribbon(shock, PackedVector3Array([body + tail, outward * 0.90 + tail, outward * 0.72, outward * 0.90 - tail, body - tail]), 0.29, ink, 0.52)
+				else:
+					_ribbon(shock, PackedVector3Array([outward * 0.14, outward * 0.64 + Vector3.UP * 0.20, outward * 1.08]), 0.46, ink, 0.78)
 			shock.scale = Vector3.ONE * 0.35
 			var force := shock.create_tween().set_parallel()
 			force.tween_property(shock, "scale", Vector3.ONE * 1.4, 0.43).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
@@ -373,7 +399,38 @@ func _ritual(parent: Node3D, at: Vector3, pattern: String, motif: String, streng
 			rune.create_tween().tween_property(rune, "position:y", 1.84 + at.y, 0.36).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
-func _schedule_impacts(parent: Node3D, event: Dictionary, direction: Vector3, strength: float, tint: Color, core: Material, delay: float) -> void:
+func _glass_growth(parent: Node3D, at: Vector3, strength: float, glass: bool) -> void:
+	var spires := MultiMeshInstance3D.new()
+	spires.multimesh = MultiMesh.new()
+	spires.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	spires.multimesh.use_colors = true
+	spires.multimesh.mesh = SPARK_MESH
+	spires.multimesh.instance_count = 8
+	spires.material_override = _spark_surface
+	spires.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(spires)
+	spires.position = at
+	var color: Color = parent.get_meta("tint")
+	for index in 8:
+		var angle := float(index) * TAU / 8.0 + 0.34
+		var outward := Vector3.FORWARD.rotated(Vector3.UP, angle)
+		var tall := (0.72 if index % 2 == 0 else 0.39) * strength
+		var radius := (0.66 if glass else 0.74) * strength
+		var tilt := (0.36 if glass else 0.56) + float(index % 2) * 0.15
+		var axis := Vector3.UP.lerp(outward, tilt).normalized()
+		var basis := Basis(Quaternion(Vector3.FORWARD, axis)).scaled_local(Vector3(0.18, 0.21, tall))
+		spires.multimesh.set_instance_transform(index, Transform3D(basis, outward * radius + Vector3.UP * (tall * 0.40)))
+		var tone := color.lightened(0.38) if index % 2 == 0 else color.darkened(0.26)
+		spires.multimesh.set_instance_color(index, tone)
+	spires.scale = Vector3(0.60, 0.04, 0.60)
+	var motion := spires.create_tween()
+	motion.tween_property(spires, "scale", Vector3.ONE, 0.21).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	motion.tween_interval(0.07)
+	motion.tween_property(spires, "scale", Vector3(1.10, 0.035, 1.10), 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	motion.tween_callback(spires.queue_free)
+
+
+func _schedule_impacts(parent: Node3D, event: Dictionary, direction: Vector3, strength: float, tint: Color, core: Material, delay: float, motif: String) -> void:
 	var hits: Dictionary = event.get("affected_positions", {})
 	if hits.is_empty():
 		return
@@ -381,18 +438,18 @@ func _schedule_impacts(parent: Node3D, event: Dictionary, direction: Vector3, st
 	if not hits.has(main_id):
 		main_id = hits.keys()[0]
 	parent.create_tween().tween_callback(func():
-		_contact(parent, _floor_point(hits[main_id]), direction, strength, tint, core, true)
+		_contact(parent, _floor_point(hits[main_id]), direction, strength, tint, core, true, motif)
 		var total := 1
 		for fighter_id in hits:
 			if fighter_id != main_id:
-				_contact(parent, _floor_point(hits[fighter_id]), direction, strength * 0.70, tint, core, false)
+				_contact(parent, _floor_point(hits[fighter_id]), direction, strength * 0.70, tint, core, false, motif)
 				total += 1
 			if total == 3:
 				break
 	).set_delay(delay)
 
 
-func _contact(parent: Node3D, at: Vector3, direction: Vector3, strength: float, tint: Color, core: Material, primary: bool) -> void:
+func _contact(parent: Node3D, at: Vector3, direction: Vector3, strength: float, tint: Color, core: Material, primary: bool, motif: String) -> void:
 	var flash := _pivot(parent, at + Vector3.UP * 1.08)
 	var side := direction.cross(Vector3.UP)
 	var rays := 4 if primary else 2
@@ -407,22 +464,12 @@ func _contact(parent: Node3D, at: Vector3, direction: Vector3, strength: float, 
 	dissipate.tween_property(flash, "scale", Vector3.ONE * 0.01, 0.13).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	dissipate.tween_callback(flash.queue_free)
 	if primary:
-		_spark_fan(parent, flash.position, direction, tint, 12 if strength >= 1.2 else 7, 0.40, strength)
+		_spark_fan(parent, flash.position, direction, tint, 12 if strength >= 1.2 else 7, 0.40, strength, motif)
 		if strength >= 1.0:
-			_hit_marker(parent, at, strength, core)
+			_seal_ground(parent, at, 0.68 * strength, motif, 0.43)
 
 
-func _hit_marker(parent: Node3D, at: Vector3, strength: float, ink: Material) -> void:
-	var impression := _pivot(parent, at + Vector3.UP * 0.13)
-	var radius := 0.62 * strength
-	for quadrant in 4:
-		var angle := quadrant * PI * 0.5 + PI * 0.25
-		_ribbon(impression, _arc(Vector3.ZERO, radius, angle - 0.23, angle + 0.23, 4), 0.24, ink, 0.46)
-	impression.scale = Vector3.ONE * 0.55
-	impression.create_tween().tween_property(impression, "scale", Vector3.ONE, 0.27).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
-
-
-func _spark_fan(parent: Node3D, origin: Vector3, direction: Vector3, tint: Color, count: int, seconds: float, strength: float) -> void:
+func _spark_fan(parent: Node3D, origin: Vector3, direction: Vector3, tint: Color, count: int, seconds: float, strength: float, motif: String) -> void:
 	var spark := MultiMeshInstance3D.new()
 	spark.multimesh = MultiMesh.new()
 	spark.multimesh.transform_format = MultiMesh.TRANSFORM_3D
@@ -437,40 +484,68 @@ func _spark_fan(parent: Node3D, origin: Vector3, direction: Vector3, tint: Color
 	rng.seed = hash(origin) + count * 31
 	var drifts := PackedVector3Array()
 	var sizes := PackedFloat32Array()
+	var ribbons := motif in ["dream", "thread", "moth", "echo"]
+	var stone := motif in ["plate", "prism", "links", "bell", "frost"]
+	var trail_shape := Vector3(0.56, 0.44, 2.24)
+	if stone:
+		trail_shape = Vector3(1.13, 0.62, 1.79)
+	elif ribbons:
+		trail_shape = Vector3(1.42, 0.33, 0.84)
+	elif motif == "water" or motif == "blood":
+		trail_shape = Vector3(0.99, 0.76, 1.17)
 	for i in count:
 		var deviance := Vector3(rng.randf_range(-0.75, 0.75), rng.randf_range(0.06, 0.62), rng.randf_range(-0.75, 0.75))
+		if ribbons:
+			var sweep := Vector3.FORWARD.rotated(Vector3.UP, float(i) * 2.40)
+			deviance = sweep * rng.randf_range(0.26, 0.63) + Vector3.UP * (0.25 + float(i % 3) * 0.31)
 		drifts.append((direction * rng.randf_range(0.25, 0.9) + deviance) * strength)
-		sizes.append(rng.randf_range(0.05, 0.125) * strength)
-		spark.multimesh.set_instance_color(i, tint.lerp(Color.WHITE, rng.randf_range(0.24, 0.83)))
+		sizes.append(rng.randf_range(0.060, 0.145) * strength)
+		var flare := tint.lerp(Color.WHITE, rng.randf_range(0.22, 0.74))
+		spark.multimesh.set_instance_color(i, flare if i % 3 != 0 else tint.darkened(0.32))
 	var scatter := func(t: float):
 		for i in count:
 			var drift := drifts[i]
-			var pos := drift * (1.0 - pow(1.0 - t, 1.7)) + Vector3.DOWN * (0.18 * t * t)
+			var arc := Vector3.UP * (sin(t * PI) * 0.31 - t * t * (0.21 if stone else 0.05))
+			var pos := drift * (1.0 - pow(1.0 - t, 1.7)) + arc
+			if ribbons:
+				var curl := Vector3(-drift.z, 0, drift.x) * sin(t * PI) * 0.52
+				pos += curl
 			var scale := sizes[i] * maxf(0.01, 1.0 - t * t)
 			var axes := Vector3(0.62, 0.59, 2.2).normalized()
-			var basis := Basis(axes, t * (3.2 + i)).scaled(Vector3(scale * 0.55, scale * 0.54, scale * 2.20))
+			var basis := Basis(axes, t * (3.2 + i)).scaled(trail_shape * scale)
 			spark.multimesh.set_instance_transform(i, Transform3D(basis, pos))
 	scatter.call(0.0)
 	spark.create_tween().tween_method(scatter, 0.0, 1.0, seconds).finished.connect(spark.queue_free)
 
 
-func _sigil(parent: Node3D, at: Vector3, radius: float, motif: String, ink: Material) -> void:
-	var sides := 22
-	match motif:
-		"frost": sides = 6
-		"prism", "plate": sides = 4
-		"ember", "flame": sides = 3
-		"links", "spark": sides = 8
-		"moth", "fletch": sides = 5
-		"blood": sides = 7
-	var glyph := _pivot(parent, at + Vector3.UP * 0.091)
-	_ribbon(glyph, _arc(Vector3.ZERO, radius, -PI, PI, sides), 0.36, ink)
-	_ribbon(glyph, _arc(Vector3.ZERO, radius * 0.68, -1.62, 1.62, 14), 0.20, ink, 0.68)
-	_ribbon(glyph, _arc(Vector3.ZERO, radius * 0.68, 1.86, 4.32, 14), 0.20, ink, 0.68)
-	glyph.scale = Vector3.ONE * 0.68
-	var unfold := glyph.create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	unfold.tween_property(glyph, "scale", Vector3.ONE * 1.09, 0.30)
-	unfold.tween_property(glyph, "rotation:y", 0.31, 0.32)
+func _seal_ground(parent: Node3D, at: Vector3, radius: float, motif: String, seconds: float) -> void:
+	var seal := _crest(parent, at + Vector3.UP * 0.104, motif, parent.get_meta("tint"), parent.get_meta("side"), radius * 0.63, false, parent.get_meta("support"))
+	seal.rotation.x = -PI * 0.5
+	var material := seal.material_override as ShaderMaterial
+	var unfold := seal.create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	unfold.tween_property(seal, "scale", Vector3.ONE * radius, seconds * 0.68)
+	unfold.tween_method(func(amount: float): material.set_shader_parameter("progress", amount), 0.0, 1.0, seconds * 0.57)
+	unfold.tween_method(func(amount: float): material.set_shader_parameter("opacity", amount), 0.85, 0.0, seconds).set_ease(Tween.EASE_IN)
+	unfold.chain().tween_callback(seal.queue_free)
+
+
+func _crest(parent: Node3D, at: Vector3, motif: String, tint: Color, accent: Color, radius: float, is_windup: bool, supportive: bool) -> MeshInstance3D:
+	var seal := MeshInstance3D.new()
+	seal.mesh = _crest_plane
+	seal.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var material := ShaderMaterial.new()
+	material.shader = CREST_SHADER
+	material.set_shader_parameter("tint", tint)
+	material.set_shader_parameter("team_tint", accent)
+	material.set_shader_parameter("crest", CRESTS.find(motif))
+	material.set_shader_parameter("windup", is_windup)
+	material.set_shader_parameter("support", supportive)
+	material.set_meta("start_opacity", 1.0)
+	seal.material_override = material
+	parent.add_child(seal)
+	seal.position = at
+	seal.scale = Vector3.ONE * radius
+	return seal
 
 
 func _ripple(parent: Node3D, at: Vector3, radius: float, ink: Material, duration: float) -> void:
@@ -539,15 +614,17 @@ func _ink(color: Color, opacity: float) -> ShaderMaterial:
 	material.shader = RIBBON_SHADER
 	material.set_shader_parameter("tint", color)
 	material.set_shader_parameter("opacity", opacity)
+	material.set_meta("start_opacity", opacity)
 	return material
 
 
 func _fade(effect: Node3D, inks: Array[ShaderMaterial], hold: float, end: float) -> void:
 	var fade := effect.create_tween()
 	fade.tween_interval(hold)
-	fade.tween_property(inks[0], "shader_parameter/opacity", 0.0, end - hold)
-	for i in range(1, inks.size()):
-		fade.parallel().tween_property(inks[i], "shader_parameter/opacity", 0.0, end - hold)
+	fade.tween_method(func(t: float):
+		for ink in inks:
+			ink.set_shader_parameter("opacity", float(ink.get_meta("start_opacity")) * t)
+	, 1.0, 0.0, end - hold)
 	fade.tween_callback(effect.queue_free)
 
 
