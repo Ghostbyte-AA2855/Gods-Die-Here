@@ -11,6 +11,13 @@ const PALETTES = {
 	"observatory": ["38394f", "202234", "2e2c43", "a68b64", "23263a"],
 }
 const STYLES = {"lockwater": 0, "kiln": 1, "orchard": 2, "quarry": 3, "observatory": 4}
+const FLOOR_BOUNCE = {
+	"lockwater": [Color("4d8994"), Vector2(-10.4, -8.2), Vector2(10.8, 4.0)],
+	"kiln": [Color("c57945"), Vector2(-8.9, -7.1), Vector2(8.8, 7.8)],
+	"orchard": [Color("ab8a51"), Vector2(-8.8, -8.9), Vector2(10.1, -6.1)],
+	"quarry": [Color("a5855e"), Vector2(-7.3, -7.4), Vector2(8.1, 6.5)],
+	"observatory": [Color("827ab6"), Vector2(-9.9, -6.4), Vector2(9.9, -6.7)],
+}
 const ZONE_PATTERNS = {"vent": 0, "wind": 1, "rise": 2, "veil": 3, "tide": 4}
 const ZONE_GUIDE = {
 	"vent": {
@@ -41,6 +48,8 @@ const SURROUND_SHADER := preload("res://scripts/stage/surroundings.gdshader")
 const ZONE_SHADER := preload("res://scripts/stage/hazard.gdshader")
 const VEIL_SHADER := preload("res://scripts/stage/veil_curtain.gdshader")
 const ARCHITECTURE_SHADER := preload("res://scripts/stage/architecture.gdshader")
+const MOTE_SHADER := preload("res://scripts/stage/scenery_motes.gdshader")
+const SPILLWAY_SHADER := preload("res://scripts/stage/spillway.gdshader")
 const ObjectiveRelic := preload("res://scripts/stage/objective_relic.gd")
 enum Finish { BLOCK, METAL, TIMBER, ROUGH }
 
@@ -51,6 +60,13 @@ var _zone_nodes: Dictionary = {}
 var _materials: Dictionary = {}
 var _architectural_materials: Dictionary = {}
 var _objective: Node3D
+var _moving_props: Array[Node3D] = []
+
+
+func _process(delta: float) -> void:
+	for prop in _moving_props:
+		var angular_velocity: Vector3 = prop.get_meta("angular_velocity")
+		prop.rotation += angular_velocity * delta
 
 
 func set_map(map_id: String, terrain: Array, environment_zones: Array) -> void:
@@ -111,6 +127,7 @@ func _change_scenery(selected: String) -> void:
 		_scenery.queue_free()
 	_retire_absent(_covers, {})
 	_retire_absent(_zone_nodes, {})
+	_moving_props.clear()
 	_map_id = selected
 	_scenery = Node3D.new()
 	_scenery.name = "Scenery_" + selected
@@ -122,12 +139,16 @@ func _change_scenery(selected: String) -> void:
 	base.set_shader_parameter("seam", Color(palette[1]))
 	base.set_shader_parameter("inlay", Color(palette[3]))
 	base.set_shader_parameter("design", STYLES[selected])
+	var bounce: Array = FLOOR_BOUNCE[selected]
+	base.set_shader_parameter("bounce", bounce[0])
+	base.set_shader_parameter("lamp_a", bounce[1])
+	base.set_shader_parameter("lamp_b", bounce[2])
 	var ground := ShaderMaterial.new()
 	ground.shader = SURROUND_SHADER
 	ground.set_shader_parameter("base", Color(palette[4]))
 	ground.set_shader_parameter("design", STYLES[selected])
 	var outskirts := PlaneMesh.new()
-	outskirts.size = Vector2(92, 96)
+	outskirts.size = Vector2(184, 192)
 	_mesh(_scenery, Vector3(0, -0.83, 0), outskirts, ground).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var perimeter: PackedVector2Array = ArenaMaps.outline(selected)
 	_build_platform(perimeter, base, _mat(palette[2]), _mat(palette[3], false, 0.35))
@@ -139,6 +160,7 @@ func _change_scenery(selected: String) -> void:
 		"observatory": _observatory()
 	_build_perimeter_props(perimeter, palette)
 	_batch_props(_scenery)
+	_build_scenery_motes()
 
 
 # All court footprints are convex and counterclockwise in simulation XY.
@@ -252,7 +274,7 @@ func _batch_props(parent: Node3D) -> void:
 	for source: Node in source_nodes:
 		var part := source as MeshInstance3D
 		var material := part.material_override
-		if not material is StandardMaterial3D or String(part.name).begins_with("Court"):
+		if not material is StandardMaterial3D or String(part.name).begins_with("Court") or part.has_meta("scenery_motion"):
 			continue
 		if not surfaces.has(material):
 			var batch := SurfaceTool.new()
@@ -267,6 +289,50 @@ func _batch_props(parent: Node3D) -> void:
 		_mesh(parent, Vector3.ZERO, batch.commit(), _architecture_finish(material))
 	for part in unbaked:
 		part.free()
+
+
+func _preserve_motion(prop: Node3D, angular_velocity: Vector3) -> void:
+	_batch_props(prop)
+	for child in prop.get_children():
+		child.set_meta("scenery_motion", true)
+		if child is MeshInstance3D:
+			child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	prop.set_meta("angular_velocity", angular_velocity)
+	_moving_props.append(prop)
+
+
+func _build_scenery_motes() -> void:
+	var palette: Array = {
+		"lockwater": [Color("7196a6"), 0.12, 0.42],
+		"kiln": [Color("e27d42"), 0.31, 0.76],
+		"orchard": [Color("c7af67"), 0.19, 0.55],
+		"quarry": [Color("968e78"), 0.17, 0.32],
+		"observatory": [Color("a396d5"), 0.16, 0.42],
+	}[_map_id]
+	var material := ShaderMaterial.new()
+	material.shader = MOTE_SHADER
+	material.set_shader_parameter("tint", palette[0])
+	material.set_shader_parameter("drift", palette[1])
+	material.set_shader_parameter("spark", palette[2])
+	var shape := QuadMesh.new()
+	shape.size = Vector2.ONE
+	var motes := MultiMesh.new()
+	motes.transform_format = MultiMesh.TRANSFORM_3D
+	motes.mesh = shape
+	motes.instance_count = 38
+	for index in motes.instance_count:
+		var direction := Vector2.RIGHT.rotated(float(index) * 2.39996)
+		var edge := ArenaMaps.constrain(_map_id, direction * 30.0)
+		var offset := edge + direction * (1.15 + fposmod(index * 1.37, 4.1))
+		var scale_factor := 0.048 + fposmod(index * 0.017, 0.093)
+		var at := Vector3(offset.x, 0.2 + fposmod(index * 0.817, 2.3), offset.y)
+		motes.set_instance_transform(index, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * scale_factor), at))
+	var node := MultiMeshInstance3D.new()
+	node.name = "PerimeterAtmosphere"
+	node.multimesh = motes
+	node.material_override = material
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_scenery.add_child(node)
 
 
 func _architecture_finish(material: StandardMaterial3D) -> Material:
@@ -303,8 +369,18 @@ func _gatehouse() -> void:
 		_box(_scenery,tower+Vector3(0,2.25,1.28),Vector3(0.83,1.45,0.09),_mat("447a83" if side < 0 else "976948"))
 		_lantern(_scenery,tower+Vector3(-side*1.9,0,1.05))
 		_box(_scenery,Vector3(side*12,0.75,-17.0),Vector3(8.0,1.85,1.5),stone)
+		_box(_scenery, Vector3(side * 14.65, 1.73, -17.0), Vector3(3.24, 0.16, 1.71), trim)
+		for parapet in 3:
+			var ledge := Vector3(side * (13.60 + parapet * 1.19), 2.0, -16.61)
+			_box(_scenery, ledge, Vector3(0.58, 0.42, 0.51), stone)
 	var gateway := Vector3(0, -0.43, -16.1)
 	_arch_frame(gateway, Vector2(4.15, 1.94), 1.95, 1.20, stone, trim)
+	_box(_scenery, gateway + Vector3.UP * 4.67, Vector3(10.46, 0.26, 1.92), stone)
+	_box(_scenery, gateway + Vector3.UP * 4.82, Vector3(10.85, 0.14, 2.11), iron)
+	for i in 7:
+		var parapet := gateway + Vector3((i - 3) * 1.52, 5.10, 0.66)
+		_box(_scenery, parapet, Vector3(0.64, 0.45, 0.62), stone)
+		_box(_scenery, parapet + Vector3.UP * 0.24, Vector3(0.71, 0.12, 0.72), trim)
 	for tooth in range(-8, 9):
 		var fraction := absf(tooth / 9.0)
 		var height := 1.91 + sqrt(1.0 - fraction * fraction) * 1.86
@@ -318,6 +394,13 @@ func _gatehouse() -> void:
 		_cone(_scenery, lock + Vector3.UP * 1.15, 0.60, 0.75, 0.24, trim, 8)
 		_cone(_scenery, lock + Vector3.UP * 1.32, 0.46, 0.57, 0.18, iron, 8)
 		_ring(_scenery, lock + Vector3.UP * 1.45, 0.25, 0.36, trim).rotation.x = PI * 0.5
+		_spillway(Vector3(side * 9.65, 0.75, -14.25), side, stone, trim)
+		for i in 9:
+			var fraction := float(i) / 8.0
+			var link := Vector3(side * lerpf(4.17, 7.0, fraction), 4.43 - 1.51 * sin(fraction * PI * 0.67), -14.65)
+			var iron_link := _ring(_scenery, link, 0.18, 0.232, iron)
+			iron_link.rotation = Vector3(PI * 0.5 + (i % 2) * PI * 0.5, 0, -side * 0.37)
+			iron_link.scale.x = 1.34
 	var brass := _mat("8a765a")
 	_ring(_scenery,Vector3(0,0.015,0),2.65,2.70,brass)
 	for index in 12:
@@ -328,6 +411,21 @@ func _gatehouse() -> void:
 		var side := 1.0 if index%2 else -1.0
 		var point := Vector3(side*(15.2+fmod(index*2.1,6.0)),-0.56,-13.0+fmod(index*4.9,26.0))
 		_box(_scenery,point,Vector3(0.8+index%4*0.35,0.03,0.06),_mat("346477"))
+
+
+func _spillway(at: Vector3, side: float, stone: Material, trim: Material) -> void:
+	var throat := QuadMesh.new()
+	throat.size = Vector2(2.64, 2.77)
+	var wet := ShaderMaterial.new()
+	wet.shader = SPILLWAY_SHADER
+	wet.set_shader_parameter("water", Color("4b8889"))
+	wet.set_shader_parameter("run", side * 0.41)
+	var cascade := _mesh(_scenery, at, throat, wet)
+	cascade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_box(_scenery, at + Vector3(0, 1.42, -0.25), Vector3(3.14, 0.30, 0.88), trim)
+	_box(_scenery, at + Vector3(0, -1.34, 0.26), Vector3(3.29, 0.28, 1.57), stone)
+	for flank in [-1.0, 1.0]:
+		_box(_scenery, at + Vector3(flank * 1.34, -0.04, -0.09), Vector3(0.31, 2.85, 0.82), stone)
 
 
 func _furnaces() -> void:
@@ -349,6 +447,21 @@ func _furnaces() -> void:
 		for bar in [-1,0,1]:
 			_box(_scenery,Vector3(x+bar*0.41,1.04,z+2.0),Vector3(0.14,1.14,0.2),iron)
 	_box(_scenery,Vector3(0,3.68,-17.5),Vector3(27.0,0.45,0.62),copper)
+	var bell_gate := Vector3(0, 0.0, -14.4)
+	var slag_stone := _mat("3f3134")
+	_arch_frame(bell_gate, Vector2(2.53, 1.42), 3.10, 0.70, slag_stone, copper)
+	_box(_scenery, bell_gate + Vector3.UP * 4.37, Vector3(5.65, 0.21, 0.94), iron)
+	_box(_scenery, bell_gate + Vector3.UP * 0.22, Vector3(5.65, 0.32, 2.26), slag_stone)
+	var bell := Node3D.new()
+	bell.position = bell_gate + Vector3(0, 3.85, 0.71)
+	_scenery.add_child(bell)
+	_cone(bell, Vector3.DOWN * 0.34, 0.39, 0.60, 0.66, copper, 12)
+	_cone(bell, Vector3.DOWN * 0.91, 0.60, 1.04, 0.51, iron, 14)
+	_cone(bell, Vector3.DOWN * 1.16, 1.02, 1.13, 0.16, copper, 14)
+	_cone(bell, Vector3.DOWN * 1.30, 0.20, 0.30, 0.26, iron, 8)
+	_cone(bell, Vector3.DOWN * 1.235, 0.825, 0.98, 0.072, _mat("8c4428", true), 14)
+	_branch(_scenery, bell.position + Vector3.UP * 0.70 + Vector3.LEFT * 0.62, bell.position + Vector3.LEFT * 0.32, 0.13, 0.10, iron)
+	_branch(_scenery, bell.position + Vector3.UP * 0.70 + Vector3.RIGHT * 0.62, bell.position + Vector3.RIGHT * 0.32, 0.13, 0.10, iron)
 	for side: float in [-1.0, 1.0]:
 		var torch := Vector3(side * 10.65, -0.50, -11.5)
 		_cone(_scenery, torch + Vector3.UP * 0.26, 0.83, 1.14, 0.47, iron, 10)
@@ -362,6 +475,11 @@ func _furnaces() -> void:
 			var joint := Vector3(siphon.x, 0.38, length)
 			_cone(_scenery, joint, 0.32, 0.32, 0.46, copper, 10).rotation.x = PI * 0.5
 			_box(_scenery, joint - Vector3.UP * 0.65, Vector3(0.86, 0.46, 0.64), iron)
+		var exhaust := Vector3(side * 14.5, 0.67, -18.65)
+		_branch(_scenery, exhaust, exhaust + Vector3(0, 3.74, 0), 0.42, 0.59, iron)
+		_branch(_scenery, exhaust + Vector3(0, 3.54, 0), exhaust + Vector3(-side * 2.30, 3.54, 0), 0.35, 0.42, iron)
+		_cone(_scenery, exhaust + Vector3(0, 3.55, 0), 0.51, 0.51, 0.19, copper, 10)
+		_box(_scenery, exhaust - Vector3.UP * 0.92, Vector3(1.64, 1.04, 1.65), slag_stone)
 	for angle_index in 8:
 		var angle := angle_index*TAU/8.0
 		var axis := Vector3(sin(angle),0,cos(angle))
@@ -375,6 +493,11 @@ func _orchard() -> void:
 		var point := Vector3(sin(angle), -0.04, cos(angle)) * (16.5 + float(index % 2) * 1.9)
 		var foliage := _mat(["414c39", "5f563d", "624a35"][index % 3], false, 0.02, Finish.ROUGH)
 		_ironwood(_scenery, point, 2.7 + float(index % 4) * 0.40, timber, foliage)
+	for side: float in [-1.0, 1.0]:
+		for depth in 3:
+			var backdrop := Vector3(side * (9.6 + depth * 3.7), -0.58, -23.6 + depth * 1.19)
+			var foliage := _mat("373e36", false, 0.02, Finish.ROUGH)
+			_ironwood(_scenery, backdrop, 3.8 + float(depth) * 0.37, timber, foliage)
 	var cairn := _mat("464b45")
 	var lichen := _mat("6b704f", false, 0.02, Finish.ROUGH)
 	for side: float in [-1.0, 1.0]:
@@ -388,14 +511,28 @@ func _orchard() -> void:
 	var rotor := Vector3(-1.5,4.0,-17.4)
 	_cone(_scenery,rotor-Vector3.UP*2.4,0.67,1.25,4.8,_mat("8e7758"),6)
 	var hub := Node3D.new()
+	hub.name = "IronleafWindmill"
 	_scenery.add_child(hub)
 	hub.position = rotor + Vector3(0,0,0.7)
+	var brass := _mat("887955", false, 0.42)
+	_cone(hub, Vector3.ZERO, 0.31, 0.31, 0.31, brass, 8).rotation.x = PI * 0.5
 	for i in 4:
 		var arm := Node3D.new()
 		hub.add_child(arm)
 		arm.rotation.z = 0.54 + i*PI/2
 		_box(arm,Vector3(0,1.2,0),Vector3(0.09,2.35,0.13),timber)
-		_box(arm,Vector3(0.20,1.55,0),Vector3(0.45,1.35,0.1),_mat("dbc99d"))
+		_box(arm,Vector3(0.31,1.52,0),Vector3(0.57,1.62,0.10),_mat("b1a389"))
+		for slat in 4:
+			_box(arm, Vector3(0.29, 0.86 + slat * 0.42, 0.071), Vector3(0.61, 0.048, 0.045), timber)
+	_preserve_motion(hub, Vector3(0.0, 0.0, 0.24))
+	var arch_stone := _mat("545749")
+	_arch_frame(Vector3(4.5, -0.58, -13.7), Vector2(1.85, 1.04), 1.53, 0.74, arch_stone, brass)
+	for flag in [-1, 1]:
+		var side := float(flag)
+		var shrine := Vector3(side * 9.8, -0.54, -9.6)
+		_rock_column(_scenery, shrine, [Vector2(0.0, 1.09), Vector2(0.23, 0.86), Vector2(0.86, 0.39), Vector2(1.14, 0.31)], arch_stone, 0.52)
+		_cone(_scenery, shrine + Vector3.UP * 1.21, 0.28, 0.20, 0.15, brass, 8)
+		_cone(_scenery, shrine + Vector3.UP * 1.30, 0.045, 0.20, 0.10, _mat("a78245", true), 7)
 	for i in 28:
 		var angle := i*2.39996
 		var r := 3.2 + fmod(i*1.75,7.5)
@@ -406,12 +543,19 @@ func _orchard() -> void:
 
 func _quarry() -> void:
 	var face := _mat("434742", false, 0.02, Finish.ROUGH)
+	var mineral := _mat("575547", false, 0.02, Finish.ROUGH)
 	for tier in range(3):
 		var distance := 17.4 + tier*2.0
 		for cut in range(-3,4):
 			var point := Vector3(cut*4.6, tier*0.91,-distance-absf(cut)*0.18)
 			_box(_scenery,point,Vector3(4.56,1.8+tier*0.72,3.5),face)
 			_box(_scenery,point+Vector3.UP*(0.77+tier*0.36),Vector3(4.59,0.16,3.53),_mat("716953"))
+	for side: float in [-1.0, 1.0]:
+		for i in 3:
+			var wall := Vector3(side * (12.2 + i * 2.42), -0.65, -14.0 + i * 1.47)
+			var height := 2.15 + i * 0.76
+			_rock_column(_scenery, wall, [Vector2(0.0, 2.42), Vector2(height * 0.43, 2.19), Vector2(height * 0.76, 1.65), Vector2(height, 0.79)], face, side * (0.26 + 0.08 * i))
+			_rock_column(_scenery, wall, [Vector2(height * 0.44, 2.25), Vector2(height * 0.53, 2.04)], mineral, side * (0.26 + 0.08 * i), false)
 	var wood := _mat("755943", false, 0.02, Finish.TIMBER)
 	for side: float in [-1.0,1.0]:
 		_box(_scenery,Vector3(8.0+side*1.25,2.3,-15.5),Vector3(0.43,5.0,0.5),wood)
@@ -419,6 +563,26 @@ func _quarry() -> void:
 	_box(_scenery,Vector3(6.15,3.2,-15.48),Vector3(0.08,2.6,0.08),_mat("403c37"))
 	_box(_scenery,Vector3(6.15,1.83,-15.48),Vector3(1.05,0.72,0.85),_mat("62574a"))
 	var rail := _mat("58514d", false, 0.56)
+	var hoist := Vector3(-3.9, -0.65, -12.9)
+	var brass := _mat("8a6e4f", false, 0.46)
+	for side: float in [-1.0, 1.0]:
+		var foot := hoist + Vector3(side * 2.12, 0.0, 0.0)
+		var beam_end := hoist + Vector3(side * 1.35, 4.16, -0.66)
+		_branch(_scenery, foot, beam_end, 0.23, 0.34, wood)
+		_branch(_scenery, foot + Vector3(0, 0.0, -2.1), beam_end, 0.17, 0.19, wood)
+		_box(_scenery, foot + Vector3.UP * 0.17, Vector3(1.31, 0.34, 1.15), face)
+	_box(_scenery, hoist + Vector3(0, 3.83, -0.56), Vector3(4.20, 0.38, 0.57), wood)
+	var axle := hoist + Vector3(0, 3.53, -0.06)
+	_ring(_scenery, axle, 0.79, 0.96, rail).rotation.x = PI * 0.5
+	_ring(_scenery, axle + Vector3.BACK * 0.022, 0.70, 0.75, brass).rotation.x = PI * 0.5
+	_cone(_scenery, axle, 0.23, 0.29, 0.42, wood, 9).rotation.x = PI * 0.5
+	for i in 6:
+		var turn := i * TAU / 6.0
+		var spoke := Vector3(cos(turn), sin(turn), 0.0)
+		_branch(_scenery, axle + spoke * 0.17, axle + spoke * 0.79, 0.062, 0.076, brass)
+		var link := axle + Vector3(0.77, -0.26 - i * 0.26, 0.03)
+		_ring(_scenery, link, 0.10, 0.135, rail).rotation = Vector3(PI * 0.5, (i % 2) * PI * 0.5, 0)
+	_rock_column(_scenery, hoist + Vector3(0.75, 0.35, 0), [Vector2(0, 0.69), Vector2(0.62, 0.89), Vector2(1.08, 0.66)], face, 0.36)
 	for side: float in [-1.0, 1.0]:
 		var start := Vector3(side * 13.8, -0.54, -6.4)
 		var finish := Vector3(side * 14.9, -0.54, 9.6)
@@ -441,12 +605,32 @@ func _quarry() -> void:
 func _observatory() -> void:
 	var brass := _mat("8c714e", false, 0.51)
 	var indigo := _mat("34394b")
-	var armillary := Vector3(0,4.0,-17.5)
-	_cone(_scenery,armillary-Vector3.UP*2.66,1.55,2.4,2.8,indigo,12)
+	var armillary := Vector3(0, 3.78, -15.55)
+	var blue_silver := _mat("8b8192", false, 0.43)
+	_cone(_scenery,armillary-Vector3.UP*2.82,1.55,2.4,2.68,indigo,12)
+	_cone(_scenery,armillary-Vector3.UP*1.57,1.71,1.55,0.31,blue_silver,12)
+	var heart := Node3D.new()
+	heart.name = "HollowglassArmillaryCore"
+	heart.position = armillary
+	_scenery.add_child(heart)
+	var star := _mat("9778c8", true)
+	_cone(heart, Vector3.DOWN * 0.42, 0.68, 0.10, 0.84, star, 7)
+	_cone(heart, Vector3.UP * 0.42, 0.10, 0.68, 0.84, star, 7)
+	_preserve_motion(heart, Vector3(0.08, 0.40, -0.05))
 	for i in 3:
-		var hoop := _ring(_scenery,armillary,2.7-i*0.25,2.83-i*0.25,brass)
-		hoop.rotation = Vector3(0.28+i*0.54,0.4+i*0.83,0.25+i*0.46)
-	_cone(_scenery,armillary,0.12,0.38,0.9,_mat("9982d0",true),6)
+		var gimbal := Node3D.new()
+		gimbal.name = "HollowglassGimbal%d" % i
+		gimbal.position = armillary
+		gimbal.rotation = Vector3(0.30 + i * 0.55, 0.37 + i * 0.63, 0.34 + i * 0.49)
+		_scenery.add_child(gimbal)
+		var radius := 2.75 - i * 0.28
+		_ring(gimbal, Vector3.ZERO, radius - 0.16, radius, brass)
+		_ring(gimbal, Vector3.UP * 0.055, radius - 0.085, radius - 0.05, blue_silver)
+		for index in 10:
+			var turn := index * TAU / 10.0
+			var rim := Vector3(cos(turn) * (radius - 0.08), 0.096, sin(turn) * (radius - 0.08))
+			_cone(gimbal, rim, 0.063, 0.12, 0.14, brass, 5)
+		_preserve_motion(gimbal, Vector3(0.097 - i * 0.046, -0.19 + i * 0.17, 0.06 - i * 0.053))
 	for i in 8:
 		var angle := i * TAU / 8.0
 		var p := armillary + Vector3(cos(angle) * 2.7, 0.07, sin(angle) * 2.7)
@@ -456,6 +640,9 @@ func _observatory() -> void:
 		_cone(_scenery,p+Vector3.UP*1.2,1.95,2.35,2.75,indigo,12)
 		_cone(_scenery,p+Vector3.UP*2.87,0.48,2.1,1.25,_mat("737694"),12)
 		_cone(_scenery,p+Vector3.UP*3.91,0.0,0.36,1.05,brass,8)
+		var ruin := Vector3(side * 14.05, -0.50, -16.98)
+		_arch_frame(ruin, Vector2(1.42, 1.43), 1.91, 0.84, indigo, blue_silver)
+		_box(_scenery, ruin + Vector3(0, 0.09, 0.13), Vector3(3.52, 0.18, 1.08), indigo)
 		var threshold := Vector3(side * 11.0, -0.49, -11.9)
 		_arch_frame(threshold, Vector2(1.33, 1.47), 1.25, 0.67, indigo, brass)
 		var sapphire := _mat("7768a4", true)

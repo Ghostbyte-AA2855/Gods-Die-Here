@@ -13,8 +13,10 @@ void fragment() {
 	float rim = pow(1.0 - clamp(abs(dot(normalize(NORMAL), normalize(VIEW))), 0.0, 1.0), 2.15);
 	float stratum = sin(object_position.y * 23.0 + object_position.x * 9.5 - TIME * 2.6);
 	float rune = smoothstep(0.76, 0.99, stratum) * 0.14;
-	ALBEDO = tint.rgb * (0.32 + rim * 0.41 + rune);
-	ROUGHNESS = 0.31;
+	float cut = smoothstep(0.87, 0.99, sin(object_position.y * 35.0 - object_position.x * 26.0 + object_position.z * 18.0));
+	float edge = smoothstep(0.62, 0.96, rim);
+	ALBEDO = tint.rgb * (0.24 + rim * 0.44 + rune + cut * 0.075);
+	ROUGHNESS = mix(0.28, 0.43, cut);
 	METALLIC = 0.34;
-	EMISSION = tint.rgb * (0.13 + rim * 0.69 + rune) * intensity;
+	EMISSION = (tint.rgb * (0.14 + rim * 0.68 + rune + cut * 0.11) + vec3(0.18, 0.14, 0.09) * edge) * intensity;
 }

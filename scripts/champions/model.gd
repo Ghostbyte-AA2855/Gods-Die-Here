@@ -49,6 +49,12 @@ var _previous_health := 0.0
 var _previous_stun := false
 var _step_phase := 0.0
 var _playback_cadence := 1.0
+var _heel_anchors: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+var _heel_planted := [false, false]
+var _previous_facing := Vector2.ZERO
+var _running_lean := Vector3.ZERO
+var _gear_drag := Vector3.ZERO
+var _gear_velocity := Vector3.ZERO
 var _cast_recoil := 0.0
 var _cast_light := 0.0
 var _ultimate_contact := 0.0
@@ -113,6 +119,11 @@ func reset_motion() -> void:
 	_locomotion = "idle"
 	_step_phase = 0.0
 	_playback_cadence = 1.0
+	_heel_planted.fill(false)
+	_previous_facing = Vector2.ZERO
+	_running_lean = Vector3.ZERO
+	_gear_drag = Vector3.ZERO
+	_gear_velocity = Vector3.ZERO
 	_cast_recoil = 0.0
 	_ultimate_windup_rate = 0.0
 	_ultimate_recovery = 0.0
@@ -132,9 +143,14 @@ func watch(fighter: Dictionary, delta: float) -> void:
 	if delta <= 0.0:
 		return
 	var distance := at - _previous_position
-	var velocity := (distance / delta).limit_length(11.0) if distance.length_squared() < 7.0 else Vector2.ZERO
+	var teleported := distance.length_squared() >= 1.44
+	var velocity := (distance / delta).limit_length(11.0) if not teleported else Vector2.ZERO
+	var previous_velocity := _motion_velocity
 	_motion_velocity = _motion_velocity.lerp(velocity, 1.0 - exp(-18.0 * delta))
 	var facing: Vector2 = fighter.facing
+	var turning := clampf(_previous_facing.angle_to(facing) / maxf(0.008, delta), -10.0, 10.0)
+	if _previous_facing.is_zero_approx():
+		turning = 0.0
 	var stunned: bool = fighter.stun > 0.0
 	_locomotion = _select_locomotion(facing)
 	var current := str(player.current_animation)
@@ -142,8 +158,6 @@ func watch(fighter: Dictionary, delta: float) -> void:
 	var damage: float = _previous_health - health
 	if locomoting and current != "idle":
 		_step_phase = player.current_animation_position / player.current_animation_length
-	var cadence := clampf(_motion_velocity.length() / 3.70, 0.55, 1.58)
-	_playback_cadence = lerpf(_playback_cadence, cadence, 1.0 - exp(-13.0 * delta))
 	_cast_recoil = move_toward(_cast_recoil, 0.0, 5.7 * delta)
 	if stunned and not _previous_stun:
 		_ultimate_windup_rate = 0.0
@@ -160,15 +174,80 @@ func watch(fighter: Dictionary, delta: float) -> void:
 		_cast_recoil = clampf(damage / 34.0, 0.12, 0.62)
 	var next := str(player.current_animation)
 	var moving := next in Animations.LOCOMOTION and next != "idle"
+	if moving:
+		var cadence := Animations.gait_cadence(champion, next, _build_type == "guard", _motion_velocity.length())
+		_playback_cadence = lerpf(_playback_cadence, cadence, 1.0 - exp(-15.0 * delta))
 	player.speed_scale = _playback_cadence if moving else 1.0
 	advance_motion(delta)
+	if moving and str(player.current_animation) == next and not teleported:
+		_plant_support_feet(next)
+	else:
+		_heel_planted.fill(false)
+	var acceleration := ((_motion_velocity - previous_velocity) / maxf(delta, 0.008)).limit_length(30.0)
+	_apply_motion_weight(delta, facing, turning, acceleration, str(player.current_animation) in Animations.LOCOMOTION)
 	if _cast_recoil > 0.0 and str(player.current_animation).begins_with("cast_"):
 		joints.spine.rotation.x += 0.21 * _cast_recoil
 		joints.head.rotation.x -= 0.26 * _cast_recoil
 		joints.mantle.rotation.z += 0.23 * _cast_recoil
 	_previous_stun = stunned
+	_previous_facing = facing
 	_previous_position = at
 	_previous_health = health
+
+
+func _plant_support_feet(clip: String) -> void:
+	var phase := player.current_animation_position / player.current_animation_length
+	var stance := Animations.stance_fraction(clip, _build_type == "guard")
+	var hip: Node3D = joints.pelvis
+	var inverse_rig := global_transform.affine_inverse()
+	for index in Animations.SIDES.size():
+		var at := fposmod(phase + 0.5 * index, 1.0)
+		if at >= stance:
+			_heel_planted[index] = false
+			continue
+		var side: String = Animations.SIDES[index]
+		var boot: Node3D = joints["foot" + side]
+		var position_now := boot.global_position
+		if not _heel_planted[index]:
+			_heel_planted[index] = true
+			_heel_anchors[index] = position_now
+			continue
+		# Keep the sole against the same flagstone until toe-off. Limit the
+		# correction so a sharp direction change can still release the boot.
+		var correction := _heel_anchors[index] - position_now
+		correction.y = 0.0
+		var lock_strength := smoothstep(0.0, 0.058, at) * (1.0 - smoothstep(stance - 0.090, stance, at))
+		var target := inverse_rig * (position_now + correction.limit_length(0.28) * lock_strength)
+		var sole := (inverse_rig.basis * boot.global_basis).orthonormalized().get_rotation_quaternion()
+		var leg := Animations.solve_leg(self, side, hip.position, hip.quaternion, target, sole)
+		joints["thigh" + side].quaternion = leg[0]
+		joints["shin" + side].quaternion = leg[1]
+		boot.quaternion = leg[2]
+
+
+func _apply_motion_weight(delta: float, facing: Vector2, turning: float, acceleration: Vector2, locomoting: bool) -> void:
+	var forward := facing.dot(_motion_velocity)
+	var lateral := facing.cross(_motion_velocity)
+	var push := facing.dot(acceleration)
+	var side_push := facing.cross(acceleration)
+	var lean_target := Vector3(clampf(-0.017 * forward - 0.004 * push, -0.16, 0.13),
+		-0.009 * turning, clampf(-0.027 * lateral - 0.0035 * side_push, -0.20, 0.20)) if locomoting else Vector3.ZERO
+	_running_lean = _running_lean.lerp(lean_target, 1.0 - exp(-12.0 * delta))
+	if locomoting:
+		joints.spine.rotation += _running_lean
+		joints.head.rotation -= _running_lean * Vector3(0.64, 0.62, 0.76)
+
+	var cloak_target := Vector3(clampf(-0.021 * forward - 0.0045 * push, -0.24, 0.17),
+		-0.028 * turning, clampf(0.032 * lateral + 0.005 * side_push, -0.25, 0.25))
+	var frequency := 9.5 if _build_type == "guard" else 12.5
+	var difference := _gear_drag - cloak_target
+	var decay := exp(-frequency * delta)
+	var response := (_gear_velocity + difference * frequency) * delta
+	_gear_drag = cloak_target + (difference + response) * decay
+	_gear_velocity = (_gear_velocity - response * frequency) * decay
+	var weight := 1.0 if locomoting else 0.57
+	joints.mantle.rotation += _gear_drag * weight
+	joints.ornament.rotation += _gear_drag * Vector3(0.48, 0.70, 0.53) * weight
 
 
 func advance_motion(delta: float) -> float:
@@ -395,6 +474,17 @@ func _loft_point(ring: Array, turn: float) -> Vector3:
 	return ring[0] + Vector3(cos(turn * TAU) * ring[1], 0.0, -sin(turn * TAU) * ring[2])
 
 
+func facets(joint: String, faces: PackedVector3Array, color: String) -> void:
+	var builder := SurfaceTool.new()
+	builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+	builder.set_smooth_group(-1)
+	for index in range(0, faces.size(), 3):
+		_flat_tri(builder, faces[index], faces[index + 1], faces[index + 2])
+	builder.generate_normals()
+	builder.generate_tangents()
+	_add(joint, Vector3.ZERO, Basis.IDENTITY, builder.commit(), color, true)
+
+
 func plate(joint: String, points: PackedVector3Array, depth: float, color: String) -> void:
 	if points.size() < 3:
 		return
@@ -519,17 +609,16 @@ static func _material(code: String) -> StandardMaterial3D:
 	if split.size() == 2:
 		match split[0]:
 			"m":
-				material.metallic = 0.64
-				material.roughness = 0.56
+				material.metallic = 0.58
 			"e":
 				material.emission_enabled = true
 				material.emission = material.albedo_color
 				material.emission_energy_multiplier = 0.72
 			"p":
 				# Polished crystal keeps a tight highlight across each facet.
-				material.metallic = 0.27
-				material.roughness = 0.19
-				material.metallic_specular = 0.72
+				material.metallic = 0.31
+				material.roughness = 0.22
+				material.metallic_specular = 0.76
 	if split[0] not in ["e", "p"]:
 		Finish.weather(material, split.size() == 2 and split[0] == "m")
 	_materials[code] = material

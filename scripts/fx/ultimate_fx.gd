@@ -5,6 +5,8 @@ extends Node3D
 const FLOOR_SHADER := preload("res://scripts/fx/ultimate_court.gdshader")
 const LIGHT_SHADER := preload("res://scripts/fx/ultimate_light.gdshader")
 const FORGE_SHADER := preload("res://scripts/fx/ultimate_forge.gdshader")
+const IMPACT_FLOOR_SHADER := preload("res://scripts/fx/ultimate_impact_floor.gdshader")
+const PRISM_SHADER := preload("res://scripts/fx/ultimate_prism.gdshader")
 const SHARD := preload("res://scripts/fx/shard.tres")
 const RED := Color("ff624e")
 const GOLD := Color("f8d18f")
@@ -15,6 +17,16 @@ const PATTERNS := [
 	"bulwark", "threads", "echo", "meteor", "lantern", "volley", "vortex", "prism",
 	"blood", "bell", "inferno", "frost", "dream", "chains", "lightning", "swarm"
 ]
+const IMPACT_FLOORS := {"meteor": 0, "inferno": 1, "prism": 2}
+const FORGE_PROFILE := [
+	Vector2(-1.92, 0.36), Vector2(-1.72, 0.65), Vector2(-1.30, 0.71), Vector2(-0.26, 0.72),
+	Vector2(-0.16, 0.91), Vector2(-0.18, 1.33), Vector2(-0.48, 1.54), Vector2(-0.41, 1.73),
+	Vector2(0.29, 1.73), Vector2(0.43, 1.55), Vector2(0.19, 1.37), Vector2(0.20, 0.87),
+	Vector2(0.38, 0.73), Vector2(1.49, 0.67), Vector2(1.77, 0.47), Vector2(1.62, 0.27),
+	Vector2(1.23, 0.1), Vector2(0.76, -0.04), Vector2(0.61, -0.37), Vector2(1.05, -0.51),
+	Vector2(1.08, -0.80), Vector2(0.79, -0.87), Vector2(-0.86, -0.87), Vector2(-1.09, -0.77),
+	Vector2(-0.99, -0.52), Vector2(-0.48, -0.34), Vector2(-0.49, -0.03), Vector2(-1.42, 0.10),
+]
 
 var _warnings: Dictionary = {}
 var _releases: Array[Node3D] = []
@@ -23,6 +35,8 @@ var _sphere := SphereMesh.new()
 var _spike := CylinderMesh.new()
 var _link := TorusMesh.new()
 var _bits_material := StandardMaterial3D.new()
+var _forge_mesh: ArrayMesh
+var _crystal_mesh: ArrayMesh
 
 
 func _ready() -> void:
@@ -41,6 +55,8 @@ func _ready() -> void:
 	_link.ring_segments = 6
 	_bits_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_bits_material.vertex_color_use_as_albedo = true
+	_forge_mesh = _extrude(PackedVector2Array(FORGE_PROFILE), 0.53)
+	_crystal_mesh = _faceted_crystal()
 
 
 func update_windups(windups: Array) -> void:
@@ -66,9 +82,17 @@ func update_windups(windups: Array) -> void:
 		marker.light.set_shader_parameter("phase", progress)
 		marker.light.set_shader_parameter("strength", 0.30 + 0.65 * progress)
 		var stamp: Node3D = marker.stamp
-		stamp.position = _point(center, 0.15 + sin(progress * PI) * 0.64)
-		stamp.rotation.y = progress * 1.1
-		stamp.scale = Vector3.ONE * (0.80 + 0.24 * progress)
+		var falling: bool = windup.get("pattern", "") == "meteor"
+		if falling:
+			var descent := pow(smoothstep(0.44, 1.0, progress), 2.08)
+			stamp.position = _point(center, lerpf(5.8, 0.88, descent)) + Vector3(0.0, 0.0, -0.61 * (1.0 - descent))
+			stamp.rotation = Vector3(-0.17 * (1.0 - descent), marker.heading, 0.32 * (1.0 - descent))
+			stamp.scale = Vector3.ONE * lerpf(0.42, 1.0, smoothstep(0.18, 0.65, progress))
+			stamp.visible = progress > 0.19
+		else:
+			stamp.position = _point(center, 0.15 + sin(progress * PI) * 0.64)
+			stamp.rotation.y = progress * 1.1
+			stamp.scale = Vector3.ONE * (0.80 + 0.24 * progress)
 		marker.stamp_light.set_shader_parameter("strength", 0.27 + 0.55 * progress)
 
 	for source in _warnings.keys():
@@ -97,8 +121,14 @@ func play_impact(event: Dictionary) -> void:
 	var mark := _disc(release, event, 0.0)
 	_place_disc(mark, event, Vector2.ZERO, radius, 0.113)
 	var ground: ShaderMaterial = mark.material_override
-	var path := _floor_marks(event, center, radius)
-	_stroke(release, path, 0.083, white)
+	var motif: int = IMPACT_FLOORS.get(event.get("pattern", ""), -1)
+	var ground_opacity := 1.0
+	if motif >= 0:
+		_impact_floor(release, radius, tint, motif)
+		ground_opacity = 0.36
+		ground.set_shader_parameter("strength", ground_opacity)
+	var path := _floor_marks(event, center, radius, motif < 0)
+	_stroke(release, path, 0.086, white)
 	_scatter(release, event, radius, tint)
 
 	var phase := release.create_tween().set_parallel(true)
@@ -107,7 +137,7 @@ func play_impact(event: Dictionary) -> void:
 		phase.tween_method(func(t: float): ink.set_shader_parameter("phase", t), 0.0, 1.3, IMPACT_TIME)
 	var fade := release.create_tween().set_parallel(true)
 	var inks: Array[ShaderMaterial] = [base, edge, white, ground]
-	var strengths := [0.94, 0.74, 0.78, 1.0]
+	var strengths := [0.94, 0.74, 0.78, ground_opacity]
 	for index in inks.size():
 		var ink := inks[index]
 		fade.tween_method(func(t: float): ink.set_shader_parameter("strength", t), strengths[index], 0.0, 0.69).set_delay(0.57)
@@ -145,18 +175,24 @@ func _create_warning(event: Dictionary) -> Dictionary:
 		segments.append(PackedVector3Array([vector * 0.62, vector * 0.78 + Vector3.UP * 0.9, vector * 0.32 + Vector3.UP * 1.48]))
 	_stroke(focus, segments, 0.16, light)
 	var pattern: String = event.get("pattern", "")
-	var sides := 4 + maxi(0, PATTERNS.find(pattern)) % 5
-	var stamp_radius := minf(1.07, float(event.get("radius", 3.0)) * 0.33)
-	var stamp: Array = []
-	for index in sides:
-		var angle := index * TAU / sides
-		var inner := Vector3(cos(angle), 0, sin(angle)) * stamp_radius * 0.66
-		var outer := Vector3(cos(angle + 0.3), 0, sin(angle + 0.3)) * stamp_radius
-		var tip := inner * 0.42 + Vector3.UP * (0.52 + 0.37 * (index % 2))
-		stamp.append(PackedVector3Array([inner, outer, tip, inner]))
-	_stroke(scrolls, stamp, 0.099, stamp_light)
+	var direction := _heading(event)
+	var heading := atan2(-direction.x, -direction.y)
+	if pattern == "meteor":
+		heading = _forge_angle()
+		_forge_head(scrolls, tint, stamp_light)
+	else:
+		var sides := 4 + maxi(0, PATTERNS.find(pattern)) % 5
+		var stamp_radius := minf(1.07, float(event.get("radius", 3.0)) * 0.33)
+		var stamp: Array = []
+		for index in sides:
+			var angle := index * TAU / sides
+			var inner := Vector3(cos(angle), 0, sin(angle)) * stamp_radius * 0.66
+			var outer := Vector3(cos(angle + 0.3), 0, sin(angle + 0.3)) * stamp_radius
+			var tip := inner * 0.42 + Vector3.UP * (0.52 + 0.37 * (index % 2))
+			stamp.append(PackedVector3Array([inner, outer, tip, inner]))
+		_stroke(scrolls, stamp, 0.099, stamp_light)
 	return {"root": root, "disk": disk, "ground": disk.material_override, "focus": focus,
-		"light": light, "stamp": scrolls, "stamp_light": stamp_light}
+		"light": light, "stamp": scrolls, "stamp_light": stamp_light, "heading": heading}
 
 
 func _construction(release: Node3D, event: Dictionary, radius: float, base: ShaderMaterial, edge: ShaderMaterial, light: ShaderMaterial) -> Node3D:
@@ -169,7 +205,9 @@ func _construction(release: Node3D, event: Dictionary, radius: float, base: Shad
 		"bulwark": _bulwark(shape, radius, tint, base, edge)
 		"threads": _threads(shape, radius, tint, base, light)
 		"echo": _echo(shape, radius, maxf(1.0, float(event.get("length", 5.0))), tint, base, edge)
-		"meteor": _meteor(shape, radius, tint, base, light)
+		"meteor":
+			shape.rotation.y = _forge_angle()
+			_meteor(shape, radius, tint, base, light)
 		"lantern": _lantern(shape, radius, tint, base, edge)
 		"volley": _volley(shape, radius, tint, base, light)
 		"vortex": _vortex(shape, radius, tint, base, edge)
@@ -250,38 +288,50 @@ func _echo(parent: Node3D, radius: float, length: float, tint: Color, base: Mate
 
 
 func _meteor(parent: Node3D, radius: float, tint: Color, base: Material, light: Material) -> void:
-	var rock := _pivot(parent, Vector3(0, 3.6, -0.86))
-	rock.scale = Vector3.ONE * 1.0
-	var profile := PackedVector2Array([
-		Vector2(-1.83, 0.29), Vector2(-0.85, 0.67), Vector2(0.15, 0.75), Vector2(1.53, 0.69),
-		Vector2(1.38, 0.21), Vector2(0.75, -0.03), Vector2(0.59, -0.41), Vector2(1.12, -0.51),
-		Vector2(1.12, -0.82), Vector2(-0.85, -0.82), Vector2(-0.83, -0.57), Vector2(-0.42, -0.36),
-		Vector2(-0.52, -0.03), Vector2(-1.43, 0.09)
-	])
-	var wall := _molten_anvil(_extrude(profile, 0.55), tint)
-	rock.add_child(wall)
-	wall.rotation.y = 0.27
-	var front := PackedVector3Array()
-	var back := PackedVector3Array()
-	for corner in profile:
-		front.append(Vector3(corner.x, corner.y, 0.56))
-		back.append(Vector3(corner.x, corner.y, -0.56))
-	front.append(front[0])
-	back.append(back[0])
-	_stroke(wall, [front, back, PackedVector3Array([Vector3(-0.77, 0.62, 0.56), Vector3(-0.13, 0.11, 0.57), Vector3(0.25, 0.32, 0.59), Vector3(0.58, -0.40, 0.56)])], 0.175, base)
+	var rock := _pivot(parent, Vector3.UP * 0.88)
+	_forge_head(rock, tint, base)
 	var sparks: Array = []
-	for index in 8:
-		var angle := index * TAU / 8.0
+	for index in 12:
+		var angle := index * TAU / 12.0
 		var heading := Vector3(cos(angle), 0.0, sin(angle))
-		sparks.append(PackedVector3Array([heading * 0.35 + Vector3.UP * 0.13, heading * radius * 0.75 + Vector3.UP * 0.91,
-			heading * radius * 0.96 + Vector3.UP * (1.85 + 0.21 * (index % 2))]))
+		var lift := 0.68 + float(index % 4) * 0.26
+		sparks.append(_curve(heading * 0.35 + Vector3.UP * 0.13,
+			heading * radius * 0.70 + Vector3.UP * (1.9 * lift), heading * radius * 0.96 + Vector3.UP * lift, 8))
 	var ejecta := _pivot(parent, Vector3.ZERO)
-	_stroke(ejecta, sparks, 0.17, light)
-	_grow(ejecta, Vector3.ONE * 0.22, Vector3.ONE, 0.29)
-	var fall := rock.create_tween()
-	fall.tween_property(rock, "position", Vector3.UP * 0.85, 0.18).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_EXPO)
-	fall.tween_property(rock, "position:y", 1.05, 0.10)
-	fall.tween_property(rock, "scale", Vector3.ONE * 0.015, 0.35).set_delay(0.25)
+	_stroke(ejecta, sparks, 0.146, light)
+	_grow(ejecta, Vector3.ONE * 0.12, Vector3.ONE, 0.34)
+	var strike := rock.create_tween().set_parallel(true)
+	strike.tween_property(rock, "position:y", 0.80, 0.11).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	strike.tween_property(rock, "rotation:z", -0.14, 0.18).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	strike.chain().tween_property(rock, "scale", Vector3(0.88, 0.03, 0.62), 0.42).set_delay(0.23).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_CUBIC)
+	strike.chain().tween_callback(rock.queue_free)
+
+
+func _forge_head(parent: Node3D, tint: Color, outline_ink: Material) -> void:
+	var wall := _molten_anvil(_forge_mesh, tint)
+	parent.add_child(wall)
+	wall.rotation.y = 0.31
+	var engravings: Array = []
+	for side in [-1.0, 1.0]:
+		var plane: float = side * 0.542
+		var edge := PackedVector3Array()
+		for corner: Vector2 in FORGE_PROFILE:
+			edge.append(Vector3(corner.x, corner.y, plane))
+		edge.append(edge[0])
+		engravings.append(edge)
+		engravings.append(PackedVector3Array([Vector3(-1.50, 0.39, plane), Vector3(-0.64, 0.49, plane),
+			Vector3(-0.16, 0.15, plane), Vector3(0.47, 0.48, plane), Vector3(1.35, 0.44, plane)]))
+		engravings.append(PackedVector3Array([Vector3(-0.71, -0.66, plane), Vector3(-0.13, -0.20, plane),
+			Vector3(0.35, -0.66, plane), Vector3(-0.71, -0.66, plane)]))
+	_stroke(wall, engravings, 0.140, outline_ink)
+
+
+func _forge_angle() -> float:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return 0.0
+	var facing := camera.global_basis.z
+	return atan2(facing.x, facing.z)
 
 
 func _lantern(parent: Node3D, radius: float, tint: Color, base: Material, edge: Material) -> void:
@@ -344,20 +394,48 @@ func _vortex(parent: Node3D, radius: float, tint: Color, base: Material, edge: M
 
 
 func _prism(parent: Node3D, radius: float, tint: Color, base: Material, light: Material) -> void:
-	var facets := _pivot(parent, Vector3.UP * 0.13)
-	var gems: Array[Transform3D] = []
-	var lines: Array = []
-	for index in 8:
-		var angle := index * TAU / 8.0
-		var point := Vector3(cos(angle) * radius * 0.66, 0.53 + 0.48 * (index % 3), sin(angle) * radius * 0.66)
-		gems.append(Transform3D((Basis(Vector3.UP, angle) * Basis(Vector3.RIGHT, -0.31)).scaled(Vector3(0.57, 1.47, 0.47)), point))
-		lines.append(PackedVector3Array([point * Vector3(1.22, 0.12, 1.22), point + Vector3.UP * 0.8, Vector3.UP * 0.18]))
-		gems.append(Transform3D(Basis(Vector3.UP, angle).scaled(Vector3(0.26, 0.49, 0.23)), point * 1.28 + Vector3.UP * 0.14))
-	_static_bits(facets, SHARD, gems, tint.darkened(0.04))
-	_stroke(facets, lines, 0.15, base)
-	_stroke(facets, [_arc(Vector3.UP * 1.99, radius * 0.24, 0.0, TAU, 5)], 0.19, light)
-	_grow(facets, Vector3(0.25, 0.32, 0.25), Vector3.ONE, 0.48)
-	facets.create_tween().tween_property(facets, "rotation:y", 1.31, 1.18)
+	var structure := _pivot(parent, Vector3.UP * 0.14)
+	var ribs: Array = []
+	var rose_window: Array = []
+	var pillars: Array[Vector3] = []
+	var crystal_count := 8
+	var crystals := _instance_batch(structure, _crystal_mesh, crystal_count * 2)
+	var glass := ShaderMaterial.new()
+	glass.shader = PRISM_SHADER
+	glass.set_shader_parameter("tint", tint)
+	crystals.material_override = glass
+	var spire := Vector3.UP * 3.87
+	for index in crystal_count:
+		var angle := index * TAU / crystal_count + PI * 0.125
+		var direction := Vector3(cos(angle), 0.0, sin(angle))
+		var foot := direction * radius * 0.73
+		var spring := direction * radius * 0.65 + Vector3.UP * 1.72
+		var lintel := direction * radius * 0.46 + Vector3.UP * 3.25
+		var peak := spire + direction * 0.14
+		ribs.append(PackedVector3Array([foot, spring, lintel, peak]))
+		var next := direction.rotated(Vector3.UP, TAU / crystal_count)
+		var cross := (direction + next).normalized() * radius * 0.68
+		ribs.append(PackedVector3Array([spring, cross + Vector3.UP * 2.66, next * radius * 0.65 + Vector3.UP * 1.72]))
+		rose_window.append(PackedVector3Array([direction * 0.25 + Vector3.UP * 3.63,
+			direction * 0.59 + Vector3.UP * 2.92, (direction + next) * 0.27 + Vector3.UP * 3.21,
+			next * 0.25 + Vector3.UP * 3.63]))
+		pillars.append(foot)
+	_stroke(structure, ribs, 0.139, base)
+	_stroke(structure, rose_window, 0.19, light)
+	var fracture := func(spread: float):
+		for index in crystal_count:
+			var foot := pillars[index]
+			var outward := foot.normalized()
+			var angle := atan2(foot.z, foot.x)
+			var shard_turn := Basis(Vector3.UP, angle + spread * 2.18) * Basis(Vector3.RIGHT, -0.14 + spread * (1.7 + 0.13 * (index % 3)))
+			var shrink := 1.0 - spread * spread * 0.91
+			var block := foot + outward * spread * 1.16 + Vector3.UP * (0.81 + 0.19 * (index % 2) + sin(spread * PI) * 0.83 - spread * 0.84)
+			var peak := foot * 0.61 + outward * spread * 2.07 + Vector3.UP * (2.14 + sin(spread * PI) * 0.67 - spread * 1.68)
+			crystals.multimesh.set_instance_transform(index, Transform3D(shard_turn.scaled(Vector3(0.61, 1.45, 0.64) * shrink), block))
+			crystals.multimesh.set_instance_transform(index + crystal_count, Transform3D(shard_turn.scaled(Vector3(0.33, 0.80, 0.33) * shrink), peak))
+	fracture.call(0.0)
+	_grow(structure, Vector3(0.91, 0.06, 0.91), Vector3.ONE, 0.27)
+	crystals.create_tween().tween_method(fracture, 0.0, 1.0, 0.60).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT).set_delay(0.37).finished.connect(crystals.queue_free)
 
 
 func _blood(parent: Node3D, radius: float, tint: Color, base: Material, edge: Material) -> void:
@@ -401,22 +479,23 @@ func _bell(parent: Node3D, radius: float, tint: Color, base: Material, light: Ma
 
 func _inferno(parent: Node3D, radius: float, tint: Color, base: Material, light: Material) -> void:
 	var pyre := _pivot(parent, Vector3.ZERO)
-	var flames: Array = []
-	for index in 15:
-		var angle := index * TAU / 15.0
+	var flares: Array = []
+	var crowns: Array = []
+	for index in 9:
+		var angle := index * TAU / 9.0
 		var heading := Vector3(cos(angle), 0.0, sin(angle))
-		var top := heading.rotated(Vector3.UP, 0.26) * radius * 0.85 + Vector3.UP * (1.57 + 0.66 * (index % 3) / 2.0)
-		var p := heading * radius * 0.86 + Vector3.UP * 0.06
-		var nose := heading.rotated(Vector3.UP, 0.24) * radius * 1.02 + Vector3.UP * 0.12
-		var points := PackedVector3Array([p, p * 1.12 + Vector3.UP * 0.65, top, top - Vector3.UP * 0.66 + heading * 0.19, nose])
-		flames.append(points)
-	_stroke(pyre, flames, 0.35, base)
-	_stroke(pyre, [_arc(Vector3.UP * 0.15, radius * 0.84, 0.0, TAU, 42),
-		_arc(Vector3.UP * 0.48, radius * 0.63, 0.0, 2.82, 22),
-		_arc(Vector3.UP * 0.48, radius * 0.63, PI, TAU - 0.3, 22)], 0.22, light)
-	_static_bits(pyre, _spike, _circle_bits(12, radius * 0.94, 0.77, Vector3(0.18, 0.79, 0.18)), tint.lightened(0.35))
-	_grow(pyre, Vector3(0.39, 0.12, 0.39), Vector3.ONE, 0.35)
-	pyre.create_tween().tween_property(pyre, "rotation:y", 0.71, 0.98)
+		var lift := 1.47 + 0.34 * (index % 3)
+		var flare := _curve(heading * radius * 0.55 + Vector3.UP * 0.14,
+			heading.rotated(Vector3.UP, -0.23) * radius * 0.88 + Vector3.UP * lift,
+			heading.rotated(Vector3.UP, -0.56) * radius * 0.91 + Vector3.UP * (lift * 0.26), 10)
+		flares.append(flare)
+		crowns.append(_curve(heading * radius * 0.57 + Vector3.UP * 0.19,
+			heading.rotated(Vector3.UP, -0.22) * radius * 0.84 + Vector3.UP * (lift * 0.94), flare[8], 8))
+	_stroke(pyre, flares, 0.42, base)
+	_stroke(pyre, crowns, 0.105, light)
+	_static_bits(pyre, _spike, _circle_bits(14, radius * 0.90, 0.62, Vector3(0.12, 0.47, 0.12)), tint.lerp(Color("f6813c"), 0.55))
+	_grow(pyre, Vector3(0.72, 0.13, 0.72), Vector3.ONE, 0.28)
+	pyre.create_tween().tween_property(pyre, "rotation:y", 1.13, 0.98).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
 func _frost(parent: Node3D, radius: float, tint: Color, base: Material, edge: Material) -> void:
@@ -524,7 +603,7 @@ func _swarm(parent: Node3D, radius: float, tint: Color, base: Material, edge: Ma
 	hurricane.create_tween().tween_property(hurricane, "rotation:y", 2.6, 1.19)
 
 
-func _floor_marks(event: Dictionary, center: Vector2, radius: float) -> Array:
+func _floor_marks(event: Dictionary, center: Vector2, radius: float, draw_spokes: bool) -> Array:
 	var shapes: Array = []
 	var affected: Dictionary = event.get("affected_positions", {})
 	for id in affected:
@@ -541,6 +620,8 @@ func _floor_marks(event: Dictionary, center: Vector2, radius: float) -> Array:
 		for side in [-1, 1]:
 			shapes.append(PackedVector3Array([half + cross * side + Vector3.UP * 0.13, -half + cross * side + Vector3.UP * 0.13]))
 		return shapes
+	if not draw_spokes:
+		return shapes
 	for index in 8:
 		var angle := index * TAU / 8.0
 		var direction := Vector3(cos(angle), 0, sin(angle))
@@ -550,6 +631,23 @@ func _floor_marks(event: Dictionary, center: Vector2, radius: float) -> Array:
 	return shapes
 
 
+func _impact_floor(parent: Node3D, radius: float, tint: Color, motif: int) -> void:
+	var material := ShaderMaterial.new()
+	material.shader = IMPACT_FLOOR_SHADER
+	material.render_priority = 1
+	material.set_shader_parameter("tint", tint)
+	material.set_shader_parameter("motif", motif)
+	var plate := MeshInstance3D.new()
+	plate.mesh = _quad
+	plate.material_override = material
+	plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(plate)
+	plate.position.y = 0.118
+	plate.rotation.x = -PI * 0.5
+	plate.scale = Vector3(radius, radius, 1.0)
+	plate.create_tween().tween_method(func(age: float): material.set_shader_parameter("age", age), 0.0, 1.0, 1.22)
+
+
 func _scatter(parent: Node3D, event: Dictionary, radius: float, tint: Color) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([event.get("source_id", 0), event.get("seq", 0), event.get("name", "")])
@@ -557,18 +655,23 @@ func _scatter(parent: Node3D, event: Dictionary, radius: float, tint: Color) -> 
 	var particles := _instance_batch(parent, SHARD, count)
 	var speeds: Array[Vector3] = []
 	var sizes: Array[Vector3] = []
+	var style: int = maxi(0, PATTERNS.find(event.get("pattern", "")))
+	var upward := [1.11, 1.28, 0.81, 1.12, 1.58, 0.76, 1.03, 1.68, 1.14, 0.94, 0.86, 0.79, 1.42, 0.70, 1.34, 1.81][style] as float
+	var angle_drift := [0.0, -0.8, 0.0, 0.0, 0.5, 0.0, 1.17, 0.22, -0.43, 0.0, 0.76, 0.0, -0.59, 0.0, 0.0, -1.02][style] as float
 	for index in count:
 		var angle := rng.randf_range(0.0, TAU)
 		var radial := rng.randf_range(0.29, 0.98) * radius
-		speeds.append(Vector3(cos(angle) * radial, rng.randf_range(0.35, 2.11), sin(angle) * radial))
-		sizes.append(Vector3(0.11, 0.19, 0.08) * rng.randf_range(0.58, 1.70))
-		particles.multimesh.set_instance_color(index, tint.lerp(GOLD, rng.randf_range(0.07, 0.83)))
+		speeds.append(Vector3(cos(angle) * radial, rng.randf_range(0.35, 2.11) * upward, sin(angle) * radial))
+		sizes.append(Vector3(0.10, 0.23, 0.068) * rng.randf_range(0.46, 1.67))
+		var flash_color := GOLD if style in [3, 4, 9, 10] else tint.lightened(0.45)
+		particles.multimesh.set_instance_color(index, tint.lerp(flash_color, rng.randf_range(0.07, 0.83)))
 	var spray := func(t: float):
 		var outgoing := 1.0 - pow(1.0 - t, 2.2)
 		for index in count:
 			var speed := speeds[index]
-			var at := Vector3(speed.x * outgoing, maxf(0.13, speed.y * sin(t * PI)), speed.z * outgoing)
-			var spin := Basis(Vector3.UP, t * 3.8 + index) * Basis(Vector3.RIGHT, t * 4.0 + index)
+			var bend := speed.rotated(Vector3.UP, angle_drift * outgoing)
+			var at := Vector3(bend.x * outgoing, maxf(0.13, speed.y * sin(t * PI)), bend.z * outgoing)
+			var spin := Basis(Vector3.UP, t * 4.1 + index) * Basis(Vector3.RIGHT, t * 5.2 + index)
 			particles.multimesh.set_instance_transform(index, Transform3D(spin.scaled(sizes[index] * maxf(0.022, 1.0 - t * t)), at))
 	spray.call(0.0)
 	particles.create_tween().tween_method(spray, 0.0, 1.0, 1.08).finished.connect(particles.queue_free)
@@ -691,6 +794,30 @@ func _extrude(outline: PackedVector2Array, half_depth: float) -> ArrayMesh:
 		for at in [Vector3(a.x, a.y, -half_depth), Vector3(b.x, b.y, -half_depth), Vector3(a.x, a.y, half_depth),
 				Vector3(a.x, a.y, half_depth), Vector3(b.x, b.y, -half_depth), Vector3(b.x, b.y, half_depth)]:
 			draw.add_vertex(at)
+	draw.generate_normals()
+	return draw.commit()
+
+
+func _faceted_crystal() -> ArrayMesh:
+	var profile := PackedVector2Array([Vector2(0.08, -0.68), Vector2(0.31, -0.22), Vector2(0.25, 0.46), Vector2(0.016, 0.90)])
+	var draw := SurfaceTool.new()
+	draw.begin(Mesh.PRIMITIVE_TRIANGLES)
+	draw.set_smooth_group(-1)
+	var sides := 5
+	for side in sides:
+		var angle := float(side) * TAU / sides
+		var next := float(side + 1) * TAU / sides
+		var edge := Vector3(cos(angle), 0.0, sin(angle))
+		var adjacent := Vector3(cos(next), 0.0, sin(next))
+		for row in range(profile.size() - 1):
+			var lower := profile[row]
+			var upper := profile[row + 1]
+			var a := edge * lower.x + Vector3.UP * lower.y
+			var b := adjacent * lower.x + Vector3.UP * lower.y
+			var c := edge * upper.x + Vector3.UP * upper.y
+			var d := adjacent * upper.x + Vector3.UP * upper.y
+			for point: Vector3 in [a, b, c, c, b, d]:
+				draw.add_vertex(point)
 	draw.generate_normals()
 	return draw.commit()
 

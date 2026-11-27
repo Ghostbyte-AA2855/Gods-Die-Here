@@ -372,10 +372,10 @@ static func _vellis(m) -> void:
 		for i in range(3):
 			var angle := radians_for_shard(i)
 			var point := Vector3(side * (0.39 + sin(angle) * 0.28), 1.26 + cos(angle) * 0.63, 0.279 + 0.03 * i)
-			var vector := Vector3(side * sin(angle) * 0.20, cos(angle) * 0.39 + 0.018, 0.042)
-			_crystal(m, "ornament", point, vector, 0.075 + i * 0.015, GLASS if i == 0 else "p:62568a", "e:" + VIOLET)
+			var vector := Vector3(side * sin(angle) * 0.26, cos(angle) * 0.44 + 0.031, 0.066 * (i - 1))
+			_crystal(m, "ornament", point, vector, 0.094 + i * 0.012, GLASS if i == 0 else "p:62568a", "e:" + VIOLET)
 			_crystal(m, "ornament", point + Vector3(side * 0.10, -0.079, 0.070), vector * 0.43, 0.031, "p:a296c1", "e:" + VIOLET)
-	_crystal(m, "ornament", Vector3(0.093, 2.038, 0.28), Vector3(-0.10, 0.312, 0.047), 0.103, "p:a597c4", "e:c599fa")
+	_crystal(m, "ornament", Vector3(0.093, 2.038, 0.28), Vector3(-0.10, 0.333, 0.047), 0.121, "p:a597c4", "e:c599fa")
 	for i in range(3):
 		_crystal(m, "hand_r", Vector3(0.57 + i * 0.061, 0.88 + i * 0.07, -0.13 - i * 0.025), Vector3(0.061 + i * 0.016, 0.12 + 0.02 * i, -0.04), 0.027, GLASS, "e:e1c6ff")
 
@@ -413,11 +413,27 @@ static func _candle(m, joint: String, start: Vector3, end: Vector3, radius: floa
 
 
 static func _crystal(m, joint: String, center: Vector3, length: Vector3, width: float, shell: String, edge: String) -> void:
-	m.tube(joint, center - length * 0.44, center, 0.002, width * 0.83, shell, 4)
-	m.tube(joint, center, center + length * 0.56, width * 0.83, 0.001, shell, 4)
-	var ridge := Vector3(0, 0, -width * 0.60)
-	m.tube(joint, center - length * 0.48, center + ridge, 0.002, width * 0.12, edge, 3)
-	m.tube(joint, center + ridge, center + length * 0.56, width * 0.12, 0.001, edge, 3)
+	# The faces meet along a split ridge, with an off-center break near the heel.
+	var axis := length.normalized()
+	var across := axis.cross(Vector3.FORWARD).normalized() * width
+	var front := across.normalized().cross(axis) * width
+	var heel := center - length * 0.46 - across * 0.19
+	var tip := center + length * 0.57 + across * 0.08
+	var collar := PackedVector3Array([
+		center + front * 0.61 + across * 0.18,
+		center + across * 0.93,
+		center - front * 0.46 + across * 0.30,
+		center - front * 0.30 - across * 0.58,
+		center - across * 0.92 + front * 0.19 + length * 0.11,
+	])
+	var faces := PackedVector3Array()
+	for index in collar.size():
+		var next := (index + 1) % collar.size()
+		faces.append_array(PackedVector3Array([heel, collar[index], collar[next], tip, collar[next], collar[index]]))
+	m.facets(joint, faces, shell)
+	var ridge := collar[0] + front * 0.026
+	m.tube(joint, heel, ridge, 0.001, width * 0.09, edge, 3)
+	m.tube(joint, ridge, tip, width * 0.09, 0.001, edge, 3)
 
 
 # Broad beveled sections build the major facial and torso planes.

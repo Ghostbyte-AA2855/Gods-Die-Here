@@ -31,6 +31,12 @@ static func _breakwater(m) -> void:
 			_bevel(m, "pelvis", Vector3(side * (0.18 + 0.014 * i), 0.85 - 0.068 * i, -0.25), _pointed(0.238 - i * 0.031, 0.146), 0.042, brass, face)
 	m.box("pelvis", Vector3(0, 0.916, -0.23), Vector3(0.51, 0.086, 0.075), hide)
 	_bevel(m, "pelvis", Vector3(0, 0.912, -0.282), _pointed(0.15, 0.18), 0.042, brass, iron)
+	# Burial-vault key pinned below the collar, small enough to keep the shield seal dominant.
+	var key_stem := Vector3(0.001, 1.356, -0.337)
+	_ring(m, "spine", key_stem + Vector3.UP * 0.045, Vector2(0.049, 0.044), 0.0, TAU, 10, 0.011, brass)
+	_line(m, "spine", key_stem, key_stem + Vector3(0.007, -0.124, -0.004), 0.012, 0.010, brass)
+	_line(m, "spine", key_stem + Vector3(0.007, -0.095, -0.004), key_stem + Vector3(0.064, -0.095, -0.004), 0.012, 0.008, silver)
+	_line(m, "spine", key_stem + Vector3(0.007, -0.124, -0.004), key_stem + Vector3(0.052, -0.124, -0.004), 0.012, 0.008, silver)
 
 	for side in [-1.0, 1.0]:
 		var s := _side(side)
@@ -112,6 +118,17 @@ static func _vault_door(m, iron: String, face: String, silver: String, brass: St
 		_line(m, joint, seal + Vector3(side * 0.076, 0.053, -0.051), seal + Vector3(side * 0.060, -0.025, -0.053), 0.013, 0.012, silver)
 		_line(m, joint, seal + Vector3(side * 0.060, -0.025, -0.053), seal + Vector3(0, -0.061, -0.056), 0.012, 0.010, silver)
 		_line(m, joint, seal + Vector3(side * 0.107, -0.102, -0.043), seal + Vector3(side * 0.035, -0.121, -0.047), 0.009, 0.008, witchlight)
+		# The cracked top corners are actually repaired with iron staples over bronze doorskin.
+		for pair in 3:
+			var start := Vector3(side * (0.260 - pair * 0.070), 0.370 + pair * 0.052, -0.088)
+			_bar(m, joint, door + start, door + start + Vector3(side * 0.026, 0.057, 0.032), 0.029, 0.026, silver)
+			_rivet(m, joint, door + start - Vector3(0, 0.003, 0.015), 0.017, brass)
+		# Thin inlaid wave lines turn up near the shield edge.
+		for line in 2:
+			var offset := Vector3(side * (0.135 + line * 0.075), -0.243 + line * 0.058, -0.116)
+			var curl := [offset, offset + Vector3(side * 0.05, 0.004, 0), offset + Vector3(side * 0.112, 0.04, 0), offset + Vector3(side * 0.144, 0.116, 0.02)]
+			for segment in range(curl.size() - 1):
+				_line(m, joint, door + curl[segment], door + curl[segment + 1], 0.01, 0.006, silver if line == 0 else witchlight)
 
 
 static func _threadkeeper(m) -> void:
@@ -273,6 +290,14 @@ static func _forgecaller(m) -> void:
 		_line(m, "spine", Vector3(side * 0.262, 1.161, -0.435), Vector3(side * 0.098, 1.028, -0.452), 0.013, 0.011, trim)
 		for ind in range(5):
 			_rivet(m, "spine", Vector3(side * (0.201 + sin(ind * 0.44) * 0.057), 1.073 + ind * 0.081, -0.441), 0.021, nickel)
+		# Recessed exhaust louvers sit outboard of the glowing grate.
+		_bevel(m, "spine", Vector3(side * 0.314, 1.336, -0.348), _pointed(0.132, 0.197), 0.065, brass, char)
+		for vent in 3:
+			var y := 1.294 + vent * 0.040
+			var from := Vector3(side * 0.273, y, -0.391)
+			var to := Vector3(side * (0.35 + vent * 0.005), y + 0.018, -0.389)
+			_line(m, "spine", from, to, 0.007, 0.006, molten)
+			_bar(m, "spine", from + Vector3.UP * 0.013, to + Vector3.UP * 0.016, 0.012, 0.016, nickel)
 		var upper_index := "upper_" + s
 		var fore_index := "fore_" + s
 		var hand_index := "hand_" + s
@@ -326,6 +351,22 @@ static func _forgecaller(m) -> void:
 	for side in [-1.0, 1.0]:
 		_bevel(m, "hand_r", hammer + Vector3(side * 0.257, 0, -0.202), _pointed(0.118, 0.32), 0.062, trim, slag)
 		_line(m, "hand_r", hammer + Vector3(side * 0.162, 0.142, -0.168), hammer + Vector3(side * 0.245, 0.091, -0.203), 0.014, 0.019, trim)
+		# The hammer face locks around a ceramic core. Both ends read from the overhead arena camera.
+		var end := hammer + Vector3(side * 0.275, -0.014, -0.016)
+		var slab := PackedVector3Array([
+			end + Vector3(0, -0.153, -0.139), end + Vector3(0, 0.092, -0.152),
+			end + Vector3(0, 0.148, -0.097), end + Vector3(0, 0.134, 0.100),
+			end + Vector3(0, 0.068, 0.146), end + Vector3(0, -0.138, 0.142),
+			end + Vector3(0, -0.188, 0.075), end + Vector3(0, -0.186, -0.091),
+		])
+		m.plate("hand_r", slab, 0.114, nickel)
+		var rune := end + Vector3(side * 0.065, 0, 0)
+		_line(m, "hand_r", rune + Vector3(0, 0.104, -0.009), rune + Vector3(0, -0.124, -0.009), 0.018, 0.013, molten)
+		for rung in 3:
+			var y := -0.067 + rung * 0.071
+			_line(m, "hand_r", rune + Vector3(0, y, -0.103 + rung * 0.014), rune + Vector3(0, y, 0.089 - rung * 0.014), 0.012, 0.010, brass)
+		for rivet in [-1.0, 1.0]:
+			_rivet(m, "hand_r", end + Vector3(side * 0.072, -0.124, rivet * 0.088), 0.021, trim)
 
 
 static func _side(side: float) -> String:

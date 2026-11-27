@@ -133,12 +133,16 @@ func reset() -> void:
 	set_process(false)
 	_last_phase = -1
 	_capture_flash = 0.0
+	_court_material.set_shader_parameter("claim_flash", 0.0)
 
 
 func _process(delta: float) -> void:
 	_beat += delta * (1.27 if _charging and not _resting else 0.80)
-	_capture_flash = move_toward(_capture_flash, 0.0, delta * 1.8)
-	_floating.position = Vector3(0, HALO_HEIGHT + sin(_beat * 1.6) * 0.095 + _capture_flash * 0.22, -_extent * 0.19)
+	if _capture_flash > 0.0:
+		_capture_flash = move_toward(_capture_flash, 0.0, delta * 1.65)
+		_court_material.set_shader_parameter("claim_flash", _capture_flash)
+	var lift := sin(_beat * 1.6) * 0.095 + _capture_flash * 0.28
+	_floating.position = Vector3(0, HALO_HEIGHT + lift, -_extent * 0.19)
 	_floating.rotation.y = _beat * 0.59
 	_floating.scale = Vector3.ONE * (1.23 + _capture_flash * 0.17)
 	if _lens != null:

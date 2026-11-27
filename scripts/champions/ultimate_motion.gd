@@ -3,6 +3,17 @@ extends RefCounted
 # The armor rigs face -Z. Each pose authors the pelvis offset in centimeters,
 # then torso and head angles, both arm chains, and the weight over each knee.
 const REST := Vector3.ZERO
+# Torso recoil, carried gear inertia, and recovery cadence after contact.
+const SETTLE := {
+	"breakwater":Vector3(0.22, 0.66, 0.87), "threadkeeper":Vector3(0.09, 1.10, 1.08),
+	"echo_duelist":Vector3(0.13, 1.20, 1.37), "forgecaller":Vector3(0.29, 0.91, 0.87),
+	"lamplighter":Vector3(0.08, 1.02, 0.95), "longwatch":Vector3(0.12, 0.72, 1.13),
+	"sluicecaller":Vector3(0.24, 1.27, 1.13), "glassmage":Vector3(0.10, 1.16, 1.20),
+	"blood_cantor":Vector3(0.19, 1.13, 1.07), "bellwarden":Vector3(0.29, 0.99, 0.89),
+	"ash_dancer":Vector3(0.13, 1.32, 1.41), "winter_scribe":Vector3(0.08, 0.89, 1.05),
+	"dream_shepherd":Vector3(0.08, 1.18, 0.94), "chainrunner":Vector3(0.24, 1.27, 1.22),
+	"coilwright":Vector3(0.22, 0.93, 1.25), "duskmoth":Vector3(0.13, 1.35, 1.30),
+}
 const CLIPS := {
 	# The Drowned Gate. Crouch behind the vault door, drive it forward,
 	# then widen the stance and keep it between the team and the surge.
@@ -252,14 +263,21 @@ static func sample(class_id: String, at: float) -> Dictionary:
 		pose.append(start.lerp(finish, amount))
 	var torso := pose[1] * (PI / 180.0)
 	var knees := pose[9] * (PI / 180.0)
+	var finish: Vector3 = SETTLE[class_id]
 	var stage_weight := smoothstep(0.0, timing.x, at) * (1.0 - smoothstep(timing.z, 1.0, at))
 	var secondary := smoothstep(timing.y, timing.y + 0.08, at) * (1.0 - smoothstep(timing.z, 1.0, at))
-	var sway := sin(at * TAU * 2.35) * secondary
+	var recovery := clampf(inverse_lerp(timing.y, 1.0, at), 0.0, 1.0)
+	var decay := (1.0 - recovery) * (1.0 - smoothstep(0.81, 1.0, recovery))
+	var recoil := sin(recovery * TAU * finish.z) * decay
+	var carried := sin(recovery * TAU * finish.z - 0.72) * decay * smoothstep(0.0, 0.15, recovery)
+	var swing: Vector3 = (frames[1][1] - frames[0][1]) * (PI / 180.0)
+	swing = swing.limit_length(1.30)
+	var ground_return: Vector3 = (frames[1][0] - frames[0][0]) * -0.01 * recoil * finish.x
 	var result := {
-		"offset": pose[0] * 0.01,
+		"offset": pose[0] * 0.01 + ground_return,
 		"pelvis": Vector3(torso.x * 0.30, torso.y * 0.32, torso.z * 0.44),
-		"spine": Vector3(torso.x * 0.70, torso.y * 0.68, torso.z * 0.56),
-		"head": pose[2] * (PI / 180.0),
+		"spine": Vector3(torso.x * 0.70, torso.y * 0.68, torso.z * 0.56) - swing * recoil * finish.x,
+		"head": pose[2] * (PI / 180.0) + swing * carried * finish.x * 0.50,
 		"upper_l": pose[3] * (PI / 180.0),
 		"fore_l": pose[4] * (PI / 180.0),
 		"hand_l": pose[5] * (PI / 180.0),
@@ -272,12 +290,13 @@ static func sample(class_id: String, at: float) -> Dictionary:
 		"shin_r": Vector3(-knees.y, 0, 0),
 		"foot_l": Vector3(knees.x * 0.27, -knees.z * 0.45, knees.z * 0.20),
 		"foot_r": Vector3(knees.y * 0.27, knees.z * 0.53, knees.z * -0.20),
-		"mantle": Vector3(-torso.x * 0.7 - secondary * 0.44, -torso.y * 0.35 + 0.22 * sway, -torso.z * 0.55),
-		"ornament": Vector3(-torso.x * 0.46 - secondary * 0.12, -torso.y * 0.48 + 0.30 * sway, -torso.z * 0.36),
+		"mantle": Vector3(-torso.x * 0.7 - secondary * 0.32 * finish.y, -torso.y * 0.35, -torso.z * 0.55) + swing * carried * 0.41 * finish.y,
+		"ornament": Vector3(-torso.x * 0.46 - secondary * 0.11, -torso.y * 0.48, -torso.z * 0.36) + swing * recoil * 0.29 * finish.y,
 	}
 	if class_id == "glassmage":
 		var grow := smoothstep(timing.x, timing.y, at) * (1.0 - smoothstep(timing.z, 1.0, at))
-		result.shard_spread = Vector3.ONE + Vector3(0.72, 0.30, 0.41) * (grow - (stage_weight - grow) * 0.29)
+		var backlash := recoil * 0.32
+		result.shard_spread = Vector3.ONE + Vector3(0.72, 0.30, 0.41) * (grow + backlash - (stage_weight - grow) * 0.29)
 	elif class_id == "duskmoth":
 		result.mantle.x -= secondary * 0.45
 	return result

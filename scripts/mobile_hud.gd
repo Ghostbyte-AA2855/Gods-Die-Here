@@ -32,14 +32,70 @@ const CAST_CARD_SECONDS := 1.65
 
 class LobbyBackdrop extends Control:
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color("#101215"))
-		for band in 16:
-			var height := (1.0 - float(band) / 16.0) * maxf(0.0, size.y - 94.0)
-			draw_rect(Rect2(0.0, size.y - height, size.x, height), Color(0.26, 0.12, 0.07, 0.024))
-		var middle := Vector2(size.x * 0.5, size.y * 0.60)
-		for arc in 4:
-			draw_arc(middle, 250.0 + arc * 54.0, PI, TAU, 72, Color(0.64, 0.49, 0.33, 0.15), 1.1, true)
-		draw_line(Vector2(20, 80), Vector2(size.x - 20, 80), Color(0.64, 0.49, 0.33, 0.26), 1.0)
+		var full := PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0.0), size, Vector2(0.0, size.y)])
+		draw_polygon(full, PackedColorArray([Color("191317"), Color("151718"), Color("141113"), Color("0d1015")]))
+		var ink := Color("a87d593c")
+		var center := Vector2(size.x * 0.5, size.y * 0.60)
+		for radius in [230.0, 278.0, 285.0, 338.0, 446.0]:
+			draw_arc(center, radius, PI, TAU, 96, ink, 1.0, true)
+		for tick in 48:
+			var axis := Vector2.RIGHT.rotated(TAU * tick / 48.0)
+			draw_line(center + axis * 289.0, center + axis * (310.0 if tick % 6 == 0 else 296.0), ink, 1.0, true)
+		draw_line(Vector2(20, 80), Vector2(size.x - 20, 80), Color("9c755462"), 1.0, true)
+
+
+class CrownSeal extends Control:
+	func _draw() -> void:
+		var center := size * 0.5
+		var gold := Color("d7ad75")
+		draw_set_transform(center)
+		var shield := PackedVector2Array([
+			Vector2(0, -22), Vector2(21, -9), Vector2(17, 15),
+			Vector2(0, 24), Vector2(-17, 15), Vector2(-21, -9),
+		])
+		draw_colored_polygon(shield, Color("352423"))
+		shield.append(shield[0])
+		draw_polyline(shield, Color("967456"), 1.2, true)
+		var broken_edge := PackedVector2Array([Vector2(-11, -5), Vector2(-6, 4), Vector2(-2, -5), Vector2(3, 2)])
+		var crown := PackedVector2Array([Vector2(4, -5), Vector2(8, 3), Vector2(12, -5), Vector2(10, 10), Vector2(-8, 10)])
+		draw_polyline(broken_edge, gold, 2.3, true)
+		draw_polyline(crown, gold, 2.3, true)
+
+
+class CourtPanel extends PanelContainer:
+	var trim := Color("9674539c"):
+		set(value):
+			if trim != value:
+				trim = value
+				queue_redraw()
+
+	func _draw() -> void:
+		for sign_x in [-1.0, 1.0]:
+			for sign_y in [-1.0, 1.0]:
+				var edge := Vector2(4.0 if sign_x > 0.0 else size.x - 4.0, 4.0 if sign_y > 0.0 else size.y - 4.0)
+				var corner := edge + Vector2(sign_x, sign_y) * 4.0
+				draw_polyline(PackedVector2Array([edge + Vector2(sign_x * 20.0, 0.0), corner, edge + Vector2(0.0, sign_y * 18.0)]), trim, 1.15, true)
+
+
+class RoundMarks extends Control:
+	var wins := 0
+	var maximum := 3
+	var side_tint := Color("a1d5cc")
+
+	func update_score(value: int, limit: int) -> void:
+		if value == wins and limit == maximum:
+			return
+		wins = value
+		maximum = limit
+		queue_redraw()
+
+	func _draw() -> void:
+		for index in maximum:
+			var center := size * 0.5 + Vector2((index - (maximum - 1.0) * 0.5) * 15.0, 0.0)
+			var shape := PackedVector2Array([center + Vector2.UP * 5.0, center + Vector2.RIGHT * 5.0, center + Vector2.DOWN * 5.0, center + Vector2.LEFT * 5.0])
+			draw_colored_polygon(shape, side_tint if index < wins else Color("3b3232"))
+			shape.append(shape[0])
+			draw_polyline(shape, Color(side_tint, 0.72 if index < wins else 0.36), 1.0, true)
 
 
 var root: Control
@@ -70,6 +126,7 @@ var _map_info: Label
 var _map_label: Label
 var _round_label: Label
 var _score_label: Label
+var _round_marks: Array[RoundMarks] = []
 var _survivors: Label
 var _time_label: Label
 var _fighter_label: Label
@@ -97,7 +154,7 @@ var _cast_roles: Array[Label] = []
 var _cast_names: Array[Label] = []
 var _cast_until := PackedInt64Array([0, 0])
 var _ultimate_banner: Label
-var _relic_panel: PanelContainer
+var _relic_panel: CourtPanel
 var _relic_name: Label
 var _relic_status: Label
 var _relic_bonus: Label
@@ -136,6 +193,10 @@ func _build_lobby() -> void:
 		outer.add_theme_constant_override("margin_" + side, 20)
 	var page := _column(outer, 14)
 	var header := _row(page, 12)
+	var crest := CrownSeal.new()
+	crest.custom_minimum_size = Vector2(54.0, 54.0)
+	crest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header.add_child(crest)
 	var logo := _label("Gods Die Here", 43, IVORY, HORIZONTAL_ALIGNMENT_LEFT, true)
 	logo.add_theme_color_override("font_shadow_color", Color("#080808"))
 	logo.add_theme_constant_override("shadow_offset_y", 3)
@@ -365,10 +426,22 @@ func _build_battlefield() -> void:
 	var round_info := _column(scoring, 1)
 	_round_label = _label("", 14, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_score_label = _label("", 23, GOLD, HORIZONTAL_ALIGNMENT_CENTER, true)
+	_score_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_score_label.custom_minimum_size.x = 59.0
 	_time_label = _label("", 17, IVORY, HORIZONTAL_ALIGNMENT_CENTER)
 	_survivors = _label("", 13, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	round_info.add_child(_round_label)
-	round_info.add_child(_score_label)
+	var score_line := _row(round_info, 5)
+	for tint in [ALLY, FOE]:
+		var marks := RoundMarks.new()
+		marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		marks.side_tint = tint
+		marks.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		marks.resized.connect(marks.queue_redraw)
+		score_line.add_child(marks)
+		_round_marks.append(marks)
+		if _round_marks.size() == 1:
+			score_line.add_child(_score_label)
 	round_info.add_child(_time_label)
 	round_info.add_child(_survivors)
 
@@ -523,6 +596,8 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 	_pause.disabled = game.phase != "active" or quit_prompt
 	_round_label.text = "ROUND %d  /  FIRST TO %d" % [game.round_number, game.round_limit()]
 	_score_label.text = "%d   /   %d" % [game.wins[0], game.wins[1]]
+	for team in _round_marks.size():
+		_round_marks[team].update_score(game.wins[team], game.round_limit())
 	var ring_suffix := "  ·  Stay inside ring" if game.safe_radius < ArenaMatch.ARENA_RADIUS else ""
 	var seconds := ceili(game.round_time)
 	_time_label.text = "%d:%02d%s" % [floori(seconds / 60.0), seconds % 60, ring_suffix]
@@ -564,6 +639,12 @@ func _update_relic_panel(relic: Dictionary, running: bool) -> void:
 		return
 	_relic_name.text = relic.name
 	var side := "Your team" if relic.team == 0 else "Rivals"
+	var accent := GOLD if relic.team < 0 or relic.phase == "contested" else ALLY if relic.team == 0 else FOE
+	if _relic_panel.trim != Color(accent, 0.66):
+		_relic_panel.trim = Color(accent, 0.66)
+		_relic_name.add_theme_color_override("font_color", accent)
+		var fill := _relic_progress.get_theme_stylebox("fill") as StyleBoxFlat
+		fill.bg_color = accent
 	match relic.phase:
 		"arming":
 			_relic_status.text = "Opens in %d s" % ceili(relic.time_left)
@@ -740,10 +821,14 @@ func _scroll(parent: Control) -> ScrollContainer:
 	return scroll
 
 
-func _panel(parent: Control, background: Color, padding: int) -> PanelContainer:
-	var panel := PanelContainer.new()
+func _panel(parent: Control, background: Color, padding: int) -> CourtPanel:
+	var panel := CourtPanel.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_theme_stylebox_override("panel", _style(background, LINE, 10, padding))
+	var surface := _style(background, LINE, 7, padding)
+	surface.shadow_color = Color("07060b90")
+	surface.shadow_size = 3
+	surface.shadow_offset = Vector2(0, 2)
+	panel.add_theme_stylebox_override("panel", surface)
 	parent.add_child(panel)
 	return panel
 
@@ -771,7 +856,9 @@ func _button(title: String, height: float, font_size: int, primary: bool = false
 	button.add_theme_color_override("font_pressed_color", GOLD)
 	button.add_theme_color_override("font_focus_color", IVORY)
 	button.add_theme_color_override("font_disabled_color", MUTED)
-	button.add_theme_stylebox_override("normal", _style(Color("#65312b") if primary else CELL, Color("#ad6d58") if primary else LINE, 7, 10))
+	var face := _style(Color("#65312b") if primary else CELL, Color("#b17b5c") if primary else LINE, 6, 10)
+	face.border_width_bottom = 2 if primary else 1
+	button.add_theme_stylebox_override("normal", face)
 	button.add_theme_stylebox_override("hover", _style(Color("#794038") if primary else Color("#34282e"), GOLD, 7, 10))
 	button.add_theme_stylebox_override("pressed", _style(TINT, GOLD, 7, 10))
 	button.add_theme_stylebox_override("hover_pressed", _style(TINT, GOLD, 7, 10))

@@ -8,6 +8,7 @@ uniform vec4 rival_color : source_color = vec4(1.0, 0.51, 0.39, 1.0);
 uniform int crest = 0;
 uniform int phase = 0;
 uniform float fraction : hint_range(0.0, 1.0) = 0.0;
+uniform float claim_flash : hint_range(0.0, 1.0) = 0.0;
 
 float band(float at, float center, float width) {
 	return 1.0 - smoothstep(width, width + 0.014, abs(at - center));
@@ -88,4 +89,12 @@ void fragment() {
 	ALBEDO = mix(ALBEDO, claim, highlighted);
 	ALBEDO = mix(ALBEDO, claim_color.rgb, retained);
 	ALPHA = max(0.080 + subtle * 0.48 + rail * 0.59, max(highlighted * 0.91, retained * 0.74)) * brightness;
+	if (claim_flash > 0.0) {
+		float time = 1.0 - claim_flash;
+		float wave = band(r, mix(0.25, 0.98, smoothstep(0.0, 0.65, time)), 0.026);
+		float seal = max(wave * 0.88, mark * claim_flash * claim_flash);
+		float light = seal * (1.0 - smoothstep(0.58, 1.0, time));
+		ALBEDO = mix(ALBEDO, mix(claim_color.rgb, vec3(1.0, 0.94, 0.82), 0.30), light);
+		ALPHA = max(ALPHA, light * 0.87);
+	}
 }

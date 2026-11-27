@@ -176,6 +176,15 @@ static func _zarya(m) -> void:
 	m.tube("pelvis", Vector3(0, 0.80, 0.012), Vector3(0, 0.97, 0.012), 0.278, 0.22, CHAR, 8)
 	_panel(m, "pelvis", -0.225, [Vector2(-0.17, 0.94), Vector2(0.03, 0.88), Vector2(0.19, 0.91), Vector2(0.143, 0.81), Vector2(-0.05, 0.765), Vector2(-0.19, 0.82)], 0.054, "m:" + SCALE)
 	_slagline(m, "spine", [Vector3(-0.148, 1.394, -0.23), Vector3(0.016, 1.288, -0.238), Vector3(-0.025, 1.235, -0.24), Vector3(0.114, 1.152, -0.239), Vector3(0.069, 1.056, -0.231)], 0.012)
+	# Staggered glass scales leave the vertical fire seam visible between them.
+	for side in [-1.0, 1.0]:
+		for scale_row in 2:
+			var y := 1.391 - scale_row * 0.087 - (0.018 if side < 0 else 0.0)
+			var x: float = side * (0.158 - scale_row * 0.014)
+			var z := -0.239 - sin(float(scale_row) * 0.81) * 0.012
+			var rakes := [Vector2(x + side * 0.076, y + 0.034), Vector2(x - side * 0.058, y + 0.022), Vector2(x - side * 0.039, y - 0.073), Vector2(x + side * 0.104, y - 0.021)]
+			_panel(m, "spine", z, rakes, 0.031, "m:" + SCALE)
+			m.tube("spine", Vector3(rakes[0].x, rakes[0].y, z - 0.020), Vector3(rakes[3].x, rakes[3].y, z - 0.020), 0.008, 0.005, "m:" + FORGED_EDGE, 5)
 	_cuirass(m, "head", [[1.558, 0.088, 0.093], [1.629, 0.121, 0.135], [1.757, 0.141, 0.151], [1.859, 0.133, 0.147], [1.925, 0.082, 0.10]], ASH_SKIN)
 	_panel(m, "head", -0.178, [Vector2(-0.173, 1.865), Vector2(0, 1.92), Vector2(0.174, 1.855), Vector2(0.135, 1.679), Vector2(0.005, 1.589), Vector2(-0.155, 1.670)], 0.053, "m:" + OBSIDIAN)
 	_cuirass(m, "head", [[1.689, 0.143, 0.15], [1.804, 0.17, 0.181], [1.909, 0.151, 0.173], [1.966, 0.061, 0.11]], "m:" + OBSIDIAN)
@@ -232,6 +241,16 @@ static func _hook_blade(m, joint: String, side: float) -> void:
 		Vector2(side * 0.809, 0.034), Vector2(side * 0.900, 0.121), Vector2(side * 0.945, 0.217),
 		Vector2(side * 0.950, 0.323), Vector2(side * 0.881, 0.50), Vector2(side * 0.769, 0.626)]
 	_bevel(m, joint, -0.112, edge, 0.020, "m:" + FORGED_EDGE, "m:" + HEAT)
+	# The back has its own bevel and a luminous fuller. The secondary face
+	# matters on the reversed grip and during her turning ultimate.
+	_bevel(m, joint, -0.049, edge, 0.020, "m:" + FORGED_EDGE, "m:" + HEAT)
+	var fuller := PackedVector3Array([
+		Vector3(side * 0.681, 0.684, -0.048), Vector3(side * 0.778, 0.615, -0.048),
+		Vector3(side * 0.902, 0.444, -0.048), Vector3(side * 0.951, 0.322, -0.048),
+		Vector3(side * 0.918, 0.354, -0.048), Vector3(side * 0.831, 0.467, -0.048),
+		Vector3(side * 0.778, 0.559, -0.048),
+	])
+	m.plate(joint, fuller, 0.012, "e:" + FIRE)
 	_slagline(m, joint, [Vector3(side * 0.686, 0.697, -0.130), Vector3(side * 0.781, 0.604, -0.130),
 		Vector3(side * 0.891, 0.459, -0.130), Vector3(side * 0.939, 0.308, -0.130),
 		Vector3(side * 0.927, 0.207, -0.130), Vector3(side * 0.893, 0.153, -0.130)], 0.013)

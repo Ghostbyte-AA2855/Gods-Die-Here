@@ -163,9 +163,13 @@ func _verify_relic_and_ultimate(arena) -> void:
 	arena.hud._ultimate_preview.pressed.emit()
 	_check("incandescent hammer" in arena.hud._ability_info.text, "The ultimate preview explains the ability's impact and counterplay")
 	arena._start("forgecaller")
+	arena.view.reduced_motion = false
 	var game = arena.game
 	_check(arena.hud._relic_panel.visible and arena.hud._relic_name.text == "Cinderheart", "The map's relic is explained in combat")
 	_check("Opens in" in arena.hud._relic_status.text and "18%" in arena.hud._relic_bonus.text, "The relic card shows its reward and opens countdown")
+	game.wins[1] = 1
+	arena._render()
+	_check(arena.hud._round_marks[0].wins == 0 and arena.hud._round_marks[1].wins == 1, "Round marks follow each team's score")
 	var player: Dictionary = game.fighters[0]
 	player.position = Vector2(-1.0, 0.0)
 	game.fighters[3].position = Vector2(1.25, 0.0)
@@ -193,6 +197,9 @@ func _verify_relic_and_ultimate(arena) -> void:
 	_check(game.ultimate_windups.is_empty() and not arena.view._charging_ultimates.has(0), "The completed ultimate clears the alert state")
 	_check(not game.cast_events.is_empty() and game.cast_events.back().get("ultimate", false), "The actual tap resolves the ultimate through the cast pipeline")
 	_check(arena.hud._ultimate_banner.text == "Godfall Hammer", "Impact names the completed ultimate")
+	_check(arena.view._cast_light.visible and arena.view._cast_light.light_energy > 0.0, "Ultimate impact lights the nearby court")
+	arena.view.reduced_motion = true
+	_check(not arena.view._cast_light.visible, "Reduced motion clears the remaining impact light")
 	_check(game.fighters[0].ultimate_used, "The HUD tracks an ultimate spent this round")
 	arena._lobby()
 	_check(arena.view._charging_ultimates.is_empty() and arena.hud.battlefield.visible == false, "Leaving the match resets windup visuals and relic HUD")

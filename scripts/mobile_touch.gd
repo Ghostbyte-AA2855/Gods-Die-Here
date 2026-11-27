@@ -422,12 +422,15 @@ func _draw_button(button: int, now: int) -> void:
 		border = border.lightened(maxf(flare * 0.5, press * 0.29))
 	if refusal > 0.0:
 		border = border.lerp(REFUSAL, refusal)
+	var face := center + Vector2(0.0, press * 2.0)
 	draw_circle(center + Vector2(0, 3), radius + 4.0, Color(0.02, 0.02, 0.03, 0.7), true, -1.0, true)
-	draw_circle(center, radius, INK.lerp(accent, 0.06 + 0.20 * press), true, -1.0, true)
-	draw_circle(center - Vector2(0, 1), radius - 4.0, Color(accent, 0.035 + 0.18 * flare + 0.09 * readiness), true, -1.0, true)
+	draw_circle(center, radius, INK, true, -1.0, true)
+	draw_circle(face, radius - 3.0, INK.lerp(accent, 0.075 + 0.19 * press), true, -1.0, true)
+	draw_circle(face - Vector2(0, 1), radius - 7.0, Color(accent, 0.035 + 0.18 * flare + 0.09 * readiness), true, -1.0, true)
 	draw_arc(center, radius, 0.0, TAU, 64, border, 2.0 + press * 0.8, true)
 	draw_arc(center, radius + 1.5, -2.64, -0.5, 28, Color(border, 0.45), 1.5, true)
 	draw_arc(center, radius - 5.5, -2.66, -0.48, 24, Color(border, 0.6), 1.0, true)
+	draw_arc(center, radius - 5.5, 0.64, 2.50, 24, Color(border, 0.29), 1.0, true)
 	if flare > 0.0:
 		draw_arc(center, radius + 2.0 + (1.0 - flare) * 9.0, 0.0, TAU, 40, Color(accent.lightened(0.35), flare * 0.7), 2.0, true)
 	if readiness > 0.0:
@@ -452,10 +455,10 @@ func _draw_button(button: int, now: int) -> void:
 		var countdown := "%.1f" % (action.countdown / 10.0) if action.countdown < 10 else str(floori(action.countdown / 10.0))
 		_draw_centered(countdown, center + Vector2(0, 3), 24, TEXT)
 	elif not action.blocked.is_empty():
-		_draw_glyph(glyph, center - Vector2(0, 11), border)
+		_draw_glyph(glyph, face - Vector2(0, 11), border)
 		_draw_centered(action.blocked, center + Vector2(0, 7), 9, TEXT)
 	else:
-		_draw_glyph(glyph, center - Vector2(0, 7), accent.lightened(0.13) if held else accent)
+		_draw_glyph(glyph, face - Vector2(0, 7), accent.lightened(0.13) if held else accent)
 	_draw_button_label(action.label, center, radius, TEXT if not unavailable else TEXT.darkened(0.22))
 
 

@@ -14,8 +14,8 @@ const BattleGuides = preload("res://scripts/mobile_battle_guides.gd")
 const FIELD_MARKER_SHADER = preload("res://scripts/fx/field_marker.gdshader")
 const ARENA_RADIUS := 14.0
 const CAMERA_OFFSET := Vector3(0.0, 15.5, 13.5)
-const PHONE_CAMERA_NEAR := Vector3(0.0, 10.8, 11.9)
-const PHONE_CAMERA_WIDE := Vector3(0.0, 15.3, 14.6)
+const PHONE_CAMERA_NEAR := Vector3(0.0, 10.35, 11.85)
+const PHONE_CAMERA_WIDE := Vector3(0.0, 14.50, 15.65)
 const TEAM_COLORS := [Color("5ae1e8"), Color("ff9471")]
 const ArenaMatch = preload("res://scripts/arena_match.gd")
 const CLASS_COLORS := {
@@ -30,11 +30,11 @@ const CLASS_COLORS := {
 }
 const EFFECT_COLORS := [Color("cbe8ff"), Color("ffd480"), Color("af9cff"), Color("8af1bd")]
 const ARENA_LIGHT := {
-	"lockwater": [Color("111e29"), Color("ffd4a4"), Color("72b9e4")],
-	"kiln": [Color("251718"), Color("ffce9d"), Color("a399ce")],
-	"orchard": [Color("121c1b"), Color("ffe8bd"), Color("86bbab")],
-	"quarry": [Color("251d19"), Color("ffd4a4"), Color("a4b9e1")],
-	"observatory": [Color("181929"), Color("ffe1c1"), Color("9fa8f4")],
+	"lockwater": [Color("111e29"), Color("ffd3a3"), Color("68bde7"), Color("86a2b6")],
+	"kiln": [Color("251719"), Color("ffc496"), Color("94a1c8"), Color("b08c82")],
+	"orchard": [Color("15201d"), Color("ffe5b7"), Color("84c3b6"), Color("8fa69c")],
+	"quarry": [Color("25201c"), Color("ffe0b6"), Color("91b7e5"), Color("a6a3a5")],
+	"observatory": [Color("151628"), Color("ffe7cd"), Color("99adf7"), Color("969dbf")],
 }
 const COURT_DUST := {
 	"lockwater": Color("8c9798"),
@@ -47,7 +47,12 @@ const STEP_CLIPS := ["run", "backpedal", "strafe_left", "strafe_right"]
 
 var blood_enabled := true
 var phone_camera := false
-var reduced_motion := false
+var reduced_motion := false:
+	set(value):
+		reduced_motion = value
+		if value and _cast_light != null:
+			_cast_light_energy = 0.0
+			_cast_light.hide()
 var presentation_paused := false:
 	set(value):
 		if value != presentation_paused:
@@ -75,6 +80,8 @@ var _pending_casts: Array[Dictionary] = []
 var _environment: Environment
 var _key_light: DirectionalLight3D
 var _rim_light: DirectionalLight3D
+var _cast_light: OmniLight3D
+var _cast_light_energy := 0.0
 var _lighting_map := ""
 var _vignette: ColorRect
 
@@ -105,12 +112,16 @@ func _process(delta: float) -> void:
 		return
 	_camera_focus = _camera_focus.lerp(_wanted_focus, 1.0 - exp(-4.6 * delta))
 	_impact *= exp(-13.0 * delta)
+	if _cast_light != null and _cast_light.visible:
+		_cast_light_energy *= exp(-7.2 * delta)
+		_cast_light.light_energy = _cast_light_energy
+		_cast_light.visible = _cast_light_energy > 0.035
 	var offset := CAMERA_OFFSET
 	if phone_camera:
 		var zoom_speed := 3.4 if _wanted_spread > _camera_spread else 1.75
 		_camera_spread = lerpf(_camera_spread, _wanted_spread, 1.0 - exp(-zoom_speed * delta))
 		offset = PHONE_CAMERA_NEAR.lerp(PHONE_CAMERA_WIDE, _camera_spread)
-		_camera.fov = lerpf(44.0, 51.0, _camera_spread)
+		_camera.fov = lerpf(43.0, 51.0, _camera_spread)
 	var nudge := Vector3.ZERO if reduced_motion else _impact_axis * _impact
 	_camera.position = offset + _camera_focus + nudge
 	_camera.look_at(_camera_focus)
@@ -224,6 +235,8 @@ func set_stage(map_id: String, terrain: Array, zones: Array) -> void:
 		_environment.fog_light_color = palette[0].lightened(0.09)
 		_key_light.light_color = palette[1]
 		_rim_light.light_color = palette[2]
+		if phone_camera:
+			_environment.ambient_light_color = palette[3]
 		_ground_contact.set_surface_color(COURT_DUST.get(map_id, COURT_DUST.lockwater))
 
 
@@ -259,6 +272,9 @@ func clear_casts() -> void:
 	_stage.set_objective({})
 	_ground_contact.clear()
 	_impact = 0.0
+	_cast_light_energy = 0.0
+	if _cast_light != null:
+		_cast_light.hide()
 
 
 func update_specials(objective: Dictionary, windups: Array) -> void:
@@ -295,7 +311,18 @@ func _release_ultimate(event: Dictionary, source: Dictionary) -> void:
 		presentation.hand_origin = source.model.release_point(8)
 	_ultimate_fx.play_impact(presentation)
 	cast_released.emit(event)
-	if event.source_id == 0 or 0 in event.affected_ids:
+	var close_to_player: bool = event.source_id == 0 or 0 in event.affected_ids
+	if _cast_light != null and not reduced_motion:
+		var center: Vector2 = event.destination
+		var power := 0.84 if close_to_player else 0.52
+		if power >= _cast_light_energy:
+			_cast_light.position = Vector3(center.x, 2.7, center.y)
+			var hue: Color = CLASS_COLORS.get(event.class_id, Color.WHEAT)
+			_cast_light.light_color = hue.lerp(Color.WHITE, 0.24)
+			_cast_light_energy = power
+			_cast_light.light_energy = power
+			_cast_light.show()
+	if close_to_player:
 		var aim: Vector2 = (event.destination as Vector2) - (event.origin as Vector2)
 		if aim.is_zero_approx():
 			aim = event.facing
@@ -353,7 +380,7 @@ func _frame_phone_action(fighters: Array[Dictionary], selected_target: int) -> v
 	if selected_target >= 0 and selected_target < fighters.size() and fighters[selected_target].alive:
 		var direction: Vector2 = fighters[selected_target].position - anchor
 		anchor += direction.limit_length(6.0) * 0.26
-	_wanted_focus = Vector3(clampf(anchor.x, -8.7, 8.7), 0.56, clampf(anchor.y, -7.5, 7.5))
+	_wanted_focus = Vector3(clampf(anchor.x, -8.7, 8.7), 0.65, clampf(anchor.y, -7.5, 7.5))
 
 
 func movement_vector(screen_movement: Vector2) -> Vector2:
@@ -569,6 +596,17 @@ func _build_lighting() -> void:
 	_rim_light.light_color = Color("75a8eb")
 	_rim_light.light_energy = 0.69
 	add_child(_rim_light)
+	if phone_camera:
+		_environment.ambient_light_energy = 0.52
+		_environment.fog_density = 0.013
+		_key_light.light_energy = 1.29
+		_key_light.rotation_degrees = Vector3(-47.0, -43.0, 0.0)
+		_rim_light.light_energy = 0.76
+		_cast_light = OmniLight3D.new()
+		_cast_light.omni_range = 8.0
+		_cast_light.omni_attenuation = 1.75
+		_cast_light.hide()
+		add_child(_cast_light)
 
 
 func _add_vignette() -> void:
@@ -586,8 +624,9 @@ func _add_vignette() -> void:
 		render_mode unshaded;
 		void fragment() {
 			vec2 at = (UV - vec2(0.50, 0.48)) * vec2(1.60, 1.36);
-			float falloff = smoothstep(0.44, 1.02, length(at));
-			COLOR = vec4(0.034, 0.025, 0.042, falloff * 0.49);
+			float falloff = smoothstep(0.49, 1.04, length(at));
+			float top_shade = (1.0 - smoothstep(0.0, 0.24, UV.y)) * 0.12;
+			COLOR = vec4(0.035, 0.025, 0.041, falloff * 0.42 + top_shade);
 		}
 	"""
 	var shade := ShaderMaterial.new()

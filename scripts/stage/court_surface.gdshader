@@ -4,6 +4,9 @@ render_mode diffuse_burley, specular_schlick_ggx;
 uniform vec4 base : source_color;
 uniform vec4 seam : source_color;
 uniform vec4 inlay : source_color;
+uniform vec4 bounce : source_color;
+uniform vec2 lamp_a;
+uniform vec2 lamp_b;
 uniform int design;
 varying vec2 tile_pos;
 
@@ -37,12 +40,12 @@ void fragment() {
 	vec2 p = tile_pos;
 	float stain = stone_noise(p * 0.61);
 	float grain = stone_noise(p * 7.0);
-	float grit = hash21(floor(p * 20.0));
+	float grit = mix(hash21(floor(p * 20.0)), 0.5, clamp(length(fwidth(p)) * 5.0, 0.0, 1.0));
 	float worn = clamp(stain * 0.70 + grain * 0.23 + grit * 0.07, 0.0, 1.0);
 	float radius = length(p);
-	float radial_fade = mix(1.04, 0.78, smoothstep(7.0, 15.0, radius));
-	vec3 face = base.rgb * radial_fade * (0.71 + 0.53 * worn);
-	float metal = 0.02;
+	float radial_fade = mix(1.06, 0.72, smoothstep(5.5, 15.0, radius));
+	float stained_course = stone_noise(vec2(p.x * 0.24 + p.y * 0.27, p.y * 0.44));
+	vec3 face = base.rgb * radial_fade * (0.66 + 0.49 * worn + 0.18 * stained_course);
 	float rough = 0.86;
 	float mark = 0.0;
 	float tile = 1.0;
@@ -54,6 +57,9 @@ void fragment() {
 		float quartz_edge = engraved(abs(mineral_vein - 0.062), 0.008) * stain;
 		face = mix(face, seam.rgb, dark_layer * 0.54);
 		face = mix(face, inlay.rgb, quartz_edge * 0.28);
+		float broken_shale = abs(fract(p.x * 0.31 - p.y * 0.15 + stain * 0.16) - 0.34);
+		float chisel_cut = engraved(broken_shale, 0.008) * smoothstep(0.46, 0.68, stained_course);
+		face = mix(face, seam.rgb, chisel_cut * 0.34);
 	} else {
 		vec2 dimensions = vec2(1.9, 1.12);
 		if (design == 0) { dimensions = vec2(2.28, 1.37); }
@@ -69,15 +75,21 @@ void fragment() {
 		tile = smoothstep(0.019 - groove_width, 0.027 + groove_width, grout);
 		float bevel = 1.0 - smoothstep(0.035, 0.09, grout);
 		float top_left = step(local_pos.x + local_pos.y, 1.0);
-		face *= 0.86 + 0.24 * cell_tint + (top_left * 0.31 - 0.19) * bevel;
+		face *= 0.84 + 0.27 * cell_tint + (top_left * 0.35 - 0.22) * bevel;
+		float chipped = smoothstep(0.58, 0.80, grain) * smoothstep(0.42, 0.61, stain);
+		float diagonal = abs(local_pos.x - local_pos.y * (0.47 + cell_tint * 0.71) - 0.15 + (grain - 0.5) * 0.09);
+		float fracture = engraved(diagonal, 0.006) * step(0.73, cell_tint) * smoothstep(0.12, 0.31, local_pos.y);
+		face *= 1.0 - fracture * 0.32 - chipped * bevel * 0.13;
 		face = mix(seam.rgb, face, tile);
 		if (design == 0) {
 			rough = 0.72;
 			float pooled = smoothstep(0.50, 0.86, stain) * tile;
 			face = mix(face, face * vec3(0.80, 0.93, 1.02), pooled * 0.45);
-			rough -= 0.25 * pooled;
+			rough -= 0.32 * pooled;
 		} else if (design == 1) {
 			face = mix(face, face * vec3(1.28, 0.72, 0.57), smoothstep(0.46, 0.84, stain) * tile * 0.50);
+			float soot = smoothstep(0.44, 0.77, stained_course * 0.74 + grain * 0.26);
+			face *= 1.0 - soot * 0.22;
 			mark = engraved(abs(abs(p.x) - 3.60), 0.022) * smoothstep(6.7, 9.0, abs(p.y));
 		} else if (design == 2) {
 			float path = min(abs(p.x * 0.65 + p.y * 0.76 + 0.58 * sin(p.x * 0.39)), abs(-p.x * 0.65 + p.y * 0.76 - 0.63 * sin(p.x * 0.39)));
@@ -85,6 +97,7 @@ void fragment() {
 			vec3 loam = face * vec3(1.12, 0.97, 0.80);
 			vec3 damp_moss = face * vec3(0.80, 0.92, 0.69);
 			face = mix(loam, damp_moss, moss * 0.85);
+			face += vec3(0.022, 0.027, 0.011) * moss * bevel * grain;
 			rough -= 0.08 * moss;
 		} else {
 			rough = 0.62 - stain * 0.17;
@@ -94,8 +107,13 @@ void fragment() {
 			mark = max(mark, engraved(abs(radius - 11.63), 0.018));
 		}
 	}
+	vec2 to_a = p - lamp_a;
+	vec2 to_b = p - lamp_b;
+	float nearest = min(dot(to_a, to_a), dot(to_b, to_b));
+	float pool = 1.0 - smoothstep(0.8, 31.0, nearest);
 	ALBEDO = mix(face, inlay.rgb * (0.72 + 0.48 * worn), mark * 0.67);
+	EMISSION = bounce.rgb * pool * (0.055 + tile * 0.039) * (0.68 + stain * 0.32);
 	ROUGHNESS = clamp(mix(0.95, rough - grain * 0.075, tile), 0.31, 0.98);
-	METALLIC = metal + mark * 0.33;
+	METALLIC = 0.02 + mark * 0.33;
 	SPECULAR = 0.30;
 }

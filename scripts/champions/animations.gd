@@ -25,6 +25,7 @@ const FALLS := {
 }
 const ACTION_LENGTHS := {"hit":0.28, "stagger":0.43, "dodge":0.32, "rally":0.36, "death":0.73, "channel":0.64}
 const LOCOMOTION := ["idle","run","strafe_left","strafe_right","backpedal"]
+const SIDES := ["_l", "_r"]
 static var _libraries: Dictionary = {}
 
 
@@ -42,7 +43,7 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 	result.add_animation("RESET", reset)
 	for name_of_clip in LOCOMOTION:
 		var seconds: float = 2.8 if name_of_clip == "idle" else stride[0]
-		var times := _times(16)
+		var times := _times(24)
 		var poses: Array[Dictionary] = []
 		for at in times:
 			var pose := _walk(name_of_clip, at, stride, archetype, model)
@@ -57,9 +58,12 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 		for at in times:
 			var pose := _react(name_of_clip, at, archetype, stride[2], FALLS[class_id])
 			if name_of_clip != "channel":
-				var entering := 1.0 - smoothstep(0.0, 0.15, at)
+				var entry_time := 0.07 if name_of_clip in ["hit", "stagger"] else 0.15
+				var entering := 1.0 - smoothstep(0.0, entry_time, at)
 				var leaving := smoothstep(0.64, 1.0, at) if name_of_clip != "death" else 0.0
 				_mix_ready(pose, ready, entering + leaving)
+				if name_of_clip != "death":
+					_plant_cast(pose, model)
 			poses.append(pose)
 		result.add_animation(name_of_clip, _clip(model, ACTION_LENGTHS[name_of_clip], times, poses, name_of_clip == "channel"))
 	var actions: Array = AbilityMotion.actions(class_id)
@@ -141,22 +145,26 @@ static func _align_vault_shield(pose: Dictionary, pitch: float, weight: float) -
 
 
 static func _plant_cast(pose: Dictionary, model: Node3D) -> void:
-	var pelvis: Transform3D = Transform3D(Basis.from_euler(pose.pelvis), model.joints.pelvis.position + pose.offset)
+	var pelvis := Transform3D(Basis.from_euler(pose.get("pelvis", Vector3.ZERO)), model.joints.pelvis.position + pose.get("offset", Vector3.ZERO))
 	var floor_height := INF
-	for side in ["_l", "_r"]:
+	for side in SIDES:
 		var foot := pelvis
 		for segment in ["thigh", "shin", "foot"]:
 			var joint: String = segment + side
-			foot *= Transform3D(Basis.from_euler(pose[joint]), model.joints[joint].position)
+			foot *= Transform3D(Basis.from_euler(pose.get(joint, Vector3.ZERO)), model.joints[joint].position)
 		var bounds: AABB = model.joints["foot" + side].get_node("Sculpt").get_aabb()
 		# Project the boot's bounding box onto the vertical axis. This keeps
 		# the support sole above the floor even through angled knee bends.
-		var vertical := Vector3(absf(foot.basis.x.y), absf(foot.basis.y.y), absf(foot.basis.z.y))
-		var sole := (foot * bounds.get_center()).y - vertical.dot(bounds.size * 0.5)
+		var sole := foot.origin.y + _sole_height(foot.basis, bounds)
 		floor_height = minf(floor_height, sole)
-	var offset: Vector3 = pose.offset
+	var offset: Vector3 = pose.get("offset", Vector3.ZERO)
 	offset.y += maxf(0.0, -0.004 - floor_height)
 	pose.offset = offset
+
+
+static func _sole_height(basis: Basis, bounds: AABB) -> float:
+	var vertical := Vector3(absf(basis.x.y), absf(basis.y.y), absf(basis.z.y))
+	return (basis * bounds.get_center()).y - vertical.dot(bounds.size * 0.5)
 
 
 static func _clip(model: Node3D, seconds: float, times: PackedFloat32Array, poses: Array, loop: bool) -> Animation:
@@ -218,61 +226,88 @@ static func _walk(motion: String, at: float, stride: Array, archetype: String, m
 	var pace: float = stride[1]
 	var circle := at * TAU
 	var sway := cos(circle)
-	var impact := cos(circle * 2.0)
-	var swing := cos(circle - 0.31)
-	var arm := 0.27 if archetype == "guard" else (0.52 if archetype == "melee" else 0.36)
+	var heavy := archetype == "guard"
+	var step := fposmod(at * 2.0, 1.0)
+	var loading := _pulse(step, 0.18 if heavy else 0.12, 0.70)
+	var extension := _pulse(step, 0.79, 1.0)
+	var swing := cos(circle - (0.45 if heavy else 0.24))
+	var arm := 0.22 if heavy else (0.53 if archetype == "melee" else 0.32)
 	var bias: float = stride[2]
 	var pose := {
-		"offset":Vector3(-sway * 0.045 * pace + lateral * 0.021, -0.077 - impact * 0.041 * pace, -0.024 * forward),
-		"pelvis":Vector3(-0.065 * forward, sway * 0.081, -lateral * 0.083 - sway * 0.047),
-		"spine":Vector3(-0.19 * forward + impact * 0.028, -sway * 0.15, -lateral * 0.106 + sway * 0.038),
-		"head":Vector3(0.12 * forward - impact * 0.023, sway * 0.072 + lateral * 0.116, lateral * 0.115),
+		"offset":Vector3(-sway * 0.053 * pace + lateral * 0.029, -0.127 - loading * (0.049 if heavy else 0.035) + extension * 0.037, -0.040 * forward - 0.014 * loading),
+		"pelvis":Vector3(-0.080 * forward - loading * 0.051, sway * 0.106, -lateral * 0.104 - sway * 0.052),
+		"spine":Vector3(-0.14 * forward - loading * 0.062 + extension * 0.033, -swing * 0.14, -lateral * 0.117 + sway * 0.059),
+		"head":Vector3(0.10 * forward + loading * 0.045, sway * 0.056 + lateral * 0.108, lateral * 0.112 - sway * 0.017),
 		"upper_l":Vector3(0.32 - swing * arm * forward + bias * 0.43, 0.10, -0.26 - lateral * 0.18),
 		"upper_r":Vector3(0.22 + swing * arm * forward - bias * 0.19, -0.067, 0.24 - lateral * 0.14),
 		"fore_l":Vector3(0.56 + maxf(0.0, -swing) * arm * 0.37, -0.09, 0),
 		"fore_r":Vector3(0.57 + maxf(0.0, swing) * arm * 0.57, 0.08, 0),
-		"hand_l":Vector3(impact * 0.034, -0.16, -0.13), "hand_r":Vector3(impact * -0.048, 0.13, 0.11),
-		"mantle":Vector3(-0.35 * forward + sin(circle * 2.0 - 0.62) * 0.11, cos(circle - 0.64) * 0.18, lateral * 0.22),
-		"ornament":Vector3(-0.11 * forward + sin(circle * 2.0 - 1.30) * 0.086, cos(circle - 0.94) * 0.21, lateral * 0.13),
+		"hand_l":Vector3(loading * 0.072, -0.16, -0.13), "hand_r":Vector3(loading * -0.088, 0.13, 0.11),
+		"mantle":Vector3(-0.29 * forward + sin(circle * 2.0 - 0.97) * 0.15, cos(circle - 0.72) * 0.19, lateral * 0.16),
+		"ornament":Vector3(-0.085 * forward + sin(circle * 2.0 - 1.48) * 0.101, cos(circle - 1.04) * 0.17, lateral * 0.11),
 	}
-	_step_foot(pose, model, "_l", at, direction, lateral, pace, -1.0)
-	_step_foot(pose, model, "_r", fposmod(at + 0.5, 1.0), direction, lateral, pace, 1.0)
+	_step_foot(pose, model, "_l", at, direction, motion, pace, heavy, -1.0)
+	_step_foot(pose, model, "_r", fposmod(at + 0.5, 1.0), direction, motion, pace, heavy, 1.0)
 	return pose
 
 
-static func _step_foot(pose: Dictionary, model: Node3D, side: String, at: float, direction: Vector3, lateral: float, pace: float, side_sign: float) -> void:
-	var plant := 0.51 if lateral == 0.0 else 0.58
+static func stance_fraction(motion: String, heavy: bool) -> float:
+	return (0.52 if motion == "run" else 0.59) + (0.035 if heavy else 0.0)
+
+
+static func _stride_extent(pace: float) -> float:
+	return 0.28 + pace * 0.188
+
+
+static func gait_cadence(class_id: String, motion: String, heavy: bool, speed: float) -> float:
+	var stride: Array = STRIDES[class_id]
+	var direction_scale := 0.77 if motion == "backpedal" else (0.74 if motion.begins_with("strafe") else 1.0)
+	var authored_speed := 2.0 * _stride_extent(stride[1]) * direction_scale / (float(stride[0]) * stance_fraction(motion, heavy))
+	return clampf(speed / authored_speed, 0.54, 2.05)
+
+
+static func _step_foot(pose: Dictionary, model: Node3D, side: String, at: float, direction: Vector3, motion: String, pace: float, heavy: bool, side_sign: float) -> void:
+	var plant := stance_fraction(motion, heavy)
 	var stance := clampf(at / plant, 0.0, 1.0)
 	var swing := clampf((at - plant) / (1.0 - plant), 0.0, 1.0)
 	var travel := lerpf(1.0, -1.0, stance) + 2.0 * smoothstep(0.0, 1.0, swing)
-	var lift := pow(sin(PI * swing), 1.38) * (0.092 + pace * 0.13)
-	var sweep := direction * travel * (0.25 + pace * 0.195)
-	sweep.x *= 0.69 if lateral != 0.0 else 1.0
+	var lift := pow(sin(PI * swing), 1.35) * (0.071 + pace * (0.084 if heavy else 0.123))
+	var lateral := direction.x
+	var sweep := direction * travel * _stride_extent(pace)
+	sweep.x *= 0.74 if lateral != 0.0 else 1.0
 	sweep.x += side_sign * (0.020 + lift * 0.18)
-	sweep.y = lift
+	var heel := 0.19 * (1.0 - smoothstep(0.0, 0.23, stance) + smoothstep(0.56, 1.0, swing))
+	var toe := 0.31 * smoothstep(0.55, 1.0, stance) * (1.0 - smoothstep(0.0, 0.63, swing))
+	var sole := Quaternion.from_euler(Vector3(heel - toe, side_sign * -0.10 - lateral * 0.26, -lateral * lift * 0.37))
+	var hip: Vector3 = model.joints["thigh" + side].position
+	var knee: Vector3 = model.joints["shin" + side].position
+	var ankle: Vector3 = model.joints["foot" + side].position
+	var bounds: AABB = model.joints["foot" + side].get_node("Sculpt").get_aabb()
+	var target := hip + knee + ankle + sweep
+	target.y = 0.003 + lift - _sole_height(Basis(sole), bounds)
+	var leg := solve_leg(model, side, model.joints.pelvis.position + pose.offset, Quaternion.from_euler(pose.pelvis), target, sole)
+	pose["thigh" + side] = leg[0].get_euler()
+	pose["shin" + side] = leg[1].get_euler()
+	pose["foot" + side] = leg[2].get_euler()
 
+
+static func solve_leg(model: Node3D, side: String, pelvis_at: Vector3, pelvis: Quaternion, target: Vector3, sole: Quaternion) -> Array[Quaternion]:
 	var hip: Vector3 = model.joints["thigh" + side].position
 	var knee: Vector3 = model.joints["shin" + side].position
 	var ankle: Vector3 = model.joints["foot" + side].position
 	# The lower leg follows the ankle target while the knee stays in front.
-	var pelvis := Quaternion.from_euler(pose.pelvis)
-	var target: Vector3 = pelvis.inverse() * (hip + knee + ankle + sweep - pose.offset) - hip
-	var aim := target.normalized()
+	var relative: Vector3 = pelvis.inverse() * (target - pelvis_at) - hip
+	var aim := relative.normalized()
 	var upper_length := knee.length()
 	var lower_length := ankle.length()
-	var reach := minf(target.length(), upper_length + lower_length - 0.006)
+	var reach := clampf(relative.length(), absf(upper_length - lower_length) + 0.006, upper_length + lower_length - 0.003)
 	var projection := (upper_length * upper_length - lower_length * lower_length + reach * reach) / (2.0 * reach)
 	var bend_direction := (Vector3.FORWARD - aim * aim.dot(Vector3.FORWARD)).normalized()
 	var upper := aim * projection + bend_direction * sqrt(maxf(0.0, upper_length * upper_length - projection * projection))
 	var thigh_rotation := Quaternion(knee.normalized(), upper.normalized())
 	var lower := thigh_rotation.inverse() * (aim * reach - upper)
 	var shin_rotation := Quaternion(ankle.normalized(), lower.normalized())
-	var toe := 0.18 * (1.0 - smoothstep(0.0, 0.23, stance) + smoothstep(0.58, 1.0, swing))
-	toe -= 0.29 * smoothstep(0.64, 1.0, stance) * (1.0 - smoothstep(0.0, 0.64, swing))
-	var sole := Quaternion.from_euler(Vector3(toe, side_sign * -0.13 - lateral * 0.27, -lateral * lift * 0.31))
-	pose["thigh" + side] = thigh_rotation.get_euler()
-	pose["shin" + side] = shin_rotation.get_euler()
-	pose["foot" + side] = ((pelvis * thigh_rotation * shin_rotation).inverse() * sole).get_euler()
+	return [thigh_rotation, shin_rotation, (pelvis * thigh_rotation * shin_rotation).inverse() * sole]
 
 
 static func _react(motion: String, at: float, archetype: String, offset: float, end_pose: Array) -> Dictionary:

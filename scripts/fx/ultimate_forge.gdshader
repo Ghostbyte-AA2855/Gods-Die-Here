@@ -33,9 +33,11 @@ void fragment() {
 	float old = 1.0 - smoothstep(0.036, 0.085, split);
 	float core = 1.0 - smoothstep(0.006, 0.014, split);
 	float flicker = 0.84 + 0.16 * sin(TIME * 14.0 + strata * 10.0);
-	vec3 iron = vec3(0.08, 0.055, 0.048) + vec3(0.16, 0.11, 0.067) * brushed * strata;
+	float ember = (1.0 - smoothstep(0.024, 0.17, split)) * (0.56 + 0.44 * strata);
+	float bevel = pow(1.0 - abs(dot(normalize(NORMAL), normalize(VIEW))), 3.0);
+	vec3 iron = vec3(0.11, 0.072, 0.061) + vec3(0.19, 0.13, 0.076) * brushed * strata;
 	ALBEDO = mix(iron, blaze.rgb * 0.62, old);
 	ROUGHNESS = mix(0.43, 0.77, surface_rough);
 	METALLIC = 0.32 * (1.0 - old);
-	EMISSION = (blaze.rgb * (old * 0.12 + recent * 0.64) + vec3(1.0, 0.85, 0.62) * core * 0.53) * flicker;
+	EMISSION = (vec3(0.115, 0.050, 0.029) * (0.41 + 0.59 * brushed) + blaze.rgb * (bevel * 0.12 + ember * 0.23 + recent * 0.91) + vec3(1.0, 0.85, 0.62) * core * 0.87) * flicker;
 }

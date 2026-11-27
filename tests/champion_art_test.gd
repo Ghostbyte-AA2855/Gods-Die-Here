@@ -63,6 +63,7 @@ func _run() -> void:
 			_verify_clip(model, player, clip, class_id, false)
 
 		var kit: Dictionary = roster[class_id]
+		_verify_active_footing(model, class_id, kit.speed)
 		var class_poses := {}
 		for slot in kit.abilities.size():
 			var clip := "cast_%d" % (slot + 1)
@@ -175,6 +176,42 @@ func _cast_support_stays_above_floor(model: Node3D, player: AnimationPlayer) -> 
 		if sole < -0.015:
 			return false
 	return true
+
+
+func _verify_active_footing(model: Node3D, class_id: String, speed: float) -> void:
+	var starting_position := model.position
+	var frame := 1.0 / 60.0
+	var player: AnimationPlayer = model.player
+	var boots: Array[Node3D] = [model.joints.foot_l, model.joints.foot_r]
+	for direction: Vector2 in [Vector2.UP, Vector2.RIGHT, Vector2.DOWN]:
+		model.position = starting_position
+		model.reset_motion()
+		var previous: Array[Vector2] = [Vector2.ZERO, Vector2.ZERO]
+		var drift := 0.0
+		var samples := 0
+		var lowest := INF
+		var state := {"position": Vector2.ZERO, "health": 100.0, "facing": Vector2.UP, "stun": 0.0, "mend_time": 0.0}
+		for tick in 108:
+			state.position += direction * speed * frame
+			model.position = starting_position + Vector3(state.position.x, 0.0, state.position.y)
+			model.watch(state, frame)
+			var phase := player.current_animation_position / player.current_animation_length
+			for limb in boots.size():
+				var boot := boots[limb]
+				var foot := Vector2(boot.global_position.x, boot.global_position.z)
+				var at := fposmod(phase + limb * 0.5, 1.0)
+				if tick > 30 and at > 0.09 and at < 0.44:
+					var bounds: AABB = boot.get_node("Sculpt").get_aabb()
+					for corner in 8:
+						lowest = minf(lowest, boot.to_global(bounds.get_endpoint(corner)).y)
+					drift += foot.distance_to(previous[limb])
+					samples += 1
+				previous[limb] = foot
+		var gait := str(player.current_animation)
+		_check(samples > 0 and drift / maxf(1, samples) / frame < 0.58 and lowest > -0.017,
+			"%s %s keeps the supporting boot on its flagstone." % [class_id, gait])
+	model.position = starting_position
+	model.reset_motion()
 
 
 func _pose(joints: Dictionary) -> Array:

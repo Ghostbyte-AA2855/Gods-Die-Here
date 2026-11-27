@@ -5,6 +5,7 @@ const SurfaceFinish = preload("res://scripts/champions/surface_finish.gd")
 const BACKDROP = preload("res://scripts/champions/portrait_backdrop.gdshader")
 const BASE_ANGLE := -0.24
 const MOTE_COUNT := 24
+const FRAMING_STEPS := 16
 const PATRON_TINTS := {
 	"ash_dancer": Color("#f49865"), "bellwarden": Color("#eac481"),
 	"blood_cantor": Color("#e4869c"), "breakwater": Color("#81c8c0"),
@@ -28,6 +29,8 @@ var _dais_light: StandardMaterial3D
 var _mote_light: StandardMaterial3D
 var _motes: MultiMesh
 var _framing: Dictionary = {}
+var _motion_bounds: Dictionary = {}
+var _preview_key := ""
 var _current_bounds := Vector3(1.0, 0.0, 2.4)
 var _patron_tint := Color("#d3a079")
 var _orbit_target := BASE_ANGLE
@@ -258,21 +261,44 @@ func _preview_framing(clip: String) -> void:
 		var radial := 0.0
 		var low := 0.0
 		var high := 0.0
-		# Fit the entire gesture, including the weapon at extension. Horizontal
-		# radius allows inspection from all angles without cropping the model.
-		for i in range(13):
-			player.seek(duration * minf(float(i) / 12.0, 0.995), true)
+		var samples := PackedVector3Array()
+		# Keep the weapon in frame through the whole move. A radius also works
+		# while the player turns the model to look at a gesture from behind.
+		for index in range(FRAMING_STEPS + 1):
+			player.seek(duration * minf(float(index) / FRAMING_STEPS, 0.995), true)
+			var pose := Vector3.ZERO
 			for part: MeshInstance3D in meshes:
 				var bounds := part.get_aabb()
 				for corner in range(8):
 					var at := part.to_global(bounds.get_endpoint(corner))
-					radial = maxf(radial, Vector2(at.x, at.z).length())
-					low = minf(low, at.y)
-					high = maxf(high, at.y)
+					pose.x = maxf(pose.x, Vector2(at.x, at.z).length())
+					pose.y = minf(pose.y, at.y)
+					pose.z = maxf(pose.z, at.y)
+			radial = maxf(radial, pose.x)
+			low = minf(low, pose.y)
+			high = maxf(high, pose.z)
+			samples.append(pose)
 		player.seek(0.0, true)
 		_framing[key] = Vector3(radial, low, high)
+		_motion_bounds[key] = samples
+	_preview_key = key if clip != "idle" else ""
 	_current_bounds = _framing[key]
-	_frame_camera()
+	if not _preview_key.is_empty():
+		_follow_gesture(0.0)
+	else:
+		_frame_camera()
+
+
+func _follow_gesture(at: float) -> void:
+	var index := floori(clampf(at, 0.0, 1.0) * FRAMING_STEPS)
+	var samples: PackedVector3Array = _motion_bounds[_preview_key]
+	var bounds := samples[index]
+	# Anticipate the next three poses before the weapon reaches the frame edge.
+	for neighbor in range(maxi(index - 1, 0), mini(index + 4, samples.size())):
+		var pose := samples[neighbor]
+		bounds = Vector3(maxf(bounds.x, pose.x), minf(bounds.y, pose.y), maxf(bounds.z, pose.z))
+	_current_bounds = bounds.lerp(_framing[_preview_key], 0.25)
+	_frame_camera(false)
 
 
 func _frame_camera(immediate: bool = true) -> void:
@@ -305,6 +331,7 @@ func _draw() -> void:
 func _on_animation_finished(clip: StringName) -> void:
 	if clip == &"ultimate" or str(clip).begins_with("cast_"):
 		champion.player.play("idle", 0.08)
+		_preview_key = ""
 		_current_bounds = _framing[champion.champion + "/idle"]
 		_frame_camera(false)
 
@@ -324,6 +351,8 @@ func _process(delta: float) -> void:
 	var cast_light := 0.0
 	if is_instance_valid(champion):
 		cast_light = champion.advance_motion(delta)
+		if not _preview_key.is_empty():
+			_follow_gesture(champion.player.current_animation_position / maxf(champion.player.current_animation_length, 0.01))
 	var focus_y := _camera.position.y - 0.36
 	if not is_equal_approx(_camera.size, _camera_size_target) or not is_equal_approx(focus_y, _camera_center_target):
 		var weight := 1.0 - exp(-12.0 * delta)
