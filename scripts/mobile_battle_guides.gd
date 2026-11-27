@@ -18,6 +18,8 @@ var _zones: Array = []
 var _fields: Array = []
 var _player := Vector2.ZERO
 var _focus_fighters: Array[Vector2] = []
+var _relic: Dictionary = {}
+var _ultimate_banner_visible := false
 var _casts: Dictionary = {}
 var _running := false
 
@@ -28,10 +30,12 @@ func _ready() -> void:
 	hide()
 
 
-func update_battle(camera: Camera3D, zones: Array, fields: Array, fighters: Array[Dictionary], target: int, running: bool) -> void:
+func update_battle(camera: Camera3D, zones: Array, fields: Array, fighters: Array[Dictionary], target: int, running: bool, relic: Dictionary = {}, ultimate_banner: bool = false) -> void:
 	_camera = camera
 	_zones = zones
 	_fields = fields
+	_relic = relic
+	_ultimate_banner_visible = ultimate_banner
 	_focus_fighters.clear()
 	if not fighters.is_empty():
 		_player = fighters[0].position
@@ -77,12 +81,14 @@ func _draw() -> void:
 		return
 	# The guides yield to HUD panels and never block a thumb control.
 	var occupied: Array[Rect2] = [
-		Rect2(0, 0, size.x, 190),
+		Rect2(0, 0, size.x, 222 if _ultimate_banner_visible else 190),
 		Rect2(0, 114, 345, 72),
 		Rect2(size.x - 345, 114, 345, 72),
 		Rect2(0, size.y * 0.59, 268, size.y * 0.41),
 		Rect2(size.x - 327, size.y - 300, 327, 300),
 	]
+	if not _relic.is_empty():
+		occupied.append(Rect2(size.x * 0.5 - 232, size.y - 122, 464, 122))
 	for point in _focus_fighters:
 		var head := _project(point, 2.65)
 		var foot := _project(point, 0.0)
@@ -97,6 +103,8 @@ func _draw() -> void:
 	for zone: Dictionary in _zones:
 		if zone.phase != "idle":
 			_draw_zone(zone, occupied)
+	if not _relic.is_empty():
+		_draw_relic(occupied)
 	var nearest_fields := _fields.duplicate()
 	nearest_fields.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return _player.distance_squared_to(a.position) < _player.distance_squared_to(b.position)
@@ -118,6 +126,25 @@ func _draw_zone(zone: Dictionary, occupied: Array[Rect2]) -> void:
 	var tint: Color = guide.active_tint if active else YOU
 	var rim: Vector2 = zone.position + Vector2(0, zone.radius * 0.52)
 	_draw_tag(_project(rim), heading, guide.effect, tint, 28.0, occupied)
+
+
+func _draw_relic(occupied: Array[Rect2]) -> void:
+	var caption: String
+	var tint := YOU
+	match _relic.phase:
+		"arming": caption = "Opens in %d s" % ceili(_relic.time_left)
+		"contested":
+			caption = "Contested"
+			tint = Color("e7b6ff")
+		"cooldown": caption = "Reopens in %d s" % ceili(_relic.time_left)
+		_:
+			caption = "Hold to claim"
+			if _relic.team >= 0:
+				caption = "%d%% claimed" % floori(100.0 * _relic.progress / _relic.hold)
+				tint = Color("93f5e2") if _relic.team == 0 else RIVAL
+	var point: Vector2 = _relic.position
+	var rim := point + Vector2(0, float(_relic.radius) * 0.84)
+	_draw_tag(_project(rim, 0.24), _relic.name, caption, tint, 25.0, occupied)
 
 
 func _draw_field(field: Dictionary, occupied: Array[Rect2]) -> bool:

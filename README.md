@@ -4,18 +4,31 @@ A dark-fantasy 3v3 arena game built for landscape play on a phone. Choose from 1
 
 ## Play
 
-Pick a champion and an arena, then start the match. Each team has a guard, a healer, and a damage dealer. The first team to win three rounds takes the match. Each round can last up to three minutes. Fighters have larger health pools in mobile practice, giving you more time to use your abilities and respond to hazards. At the time limit, the team with more surviving fighters wins. If survivor counts match, remaining team health as a percentage of maximum decides the round.
+Pick a champion and an arena, then start the match. Each team has a guard, a healer, and a damage dealer. The first team to win three rounds takes the match. Each round can last up to five minutes. At the time limit, the team with more surviving fighters wins. If survivor counts match, remaining team health as a percentage of maximum decides the round.
 
 | Touch | Action |
 |---|---|
 | Drag from the lower left | Move your champion with the floating stick. |
 | Tap or hold the large attack button | Use the basic attack and build your class resource. Holding repeats it when ready and in range. |
 | Tap an ability | Cast one of your five class abilities. A tap up to 0.22 seconds before cooldown ends is queued. The icon indicates whether it targets a rival, supports an ally, affects you, or aims at the ground. |
+| Tap Ultimate | Start your signature move once its charge reaches 100%. The marked area stays in place during the windup. Stun, silence, or a cast interrupt can stop it. |
 | Tap Dodge | Evade in your movement direction. The button becomes Break Free during a stun, root, or silence until you use your one escape for the round. |
 | Tap a fighter or the arena floor | Lock onto a target or clear the lock. With no lock, enemies in line of sight and eligible allies are picked automatically. |
 | Tap Pause | Resume, return to the champion roster, or toggle sound, blood effects, and camera shake. |
 
-The champion screen previews all six attacks and spells. In a fight, cast cards name your last ability and highlight relevant rival skills or ally support. Major spell effects show their source and hit location. Blocked attacks explain the specific cause, such as distance, line of sight, silence, or missing class resource. The top scoreboard also shows how many allies and rivals are still standing. The [pantheon](docs/pantheon.md) introduces each patron.
+The champion screen previews all six regular moves and each class's unique ultimate. Build ultimate charge by dealing and taking combat damage, healing, and absorbing hits. Each champion gets one ultimate attempt per round. Use the warning ring or lane to step clear or interrupt the caster. The [pantheon](docs/pantheon.md) introduces each patron.
+
+### Claim the relic
+
+A relic opens at the center of each map nine seconds into the round. Hold its circle for five seconds to earn a team reward. Both teams in the circle pause progress. Leaving it empty or conceding it to the other team loses your progress. A claimed relic reopens after 24 seconds.
+
+| Arena relic | Reward |
+|---|---|
+| Lockwater · Tidefont | Restores 14% of maximum health to living teammates. |
+| Kiln · Cinderheart | Increases team damage by 18% for 11 seconds. |
+| Orchard · Rootwell | Restores 12% of maximum health to living teammates. |
+| Quarry · Oathstone | Reduces combat damage taken by 24% for 11 seconds. |
+| Observatory · Eclipse Lens | Increases team damage by 14% for 15 seconds. |
 
 ### Read the ground
 
@@ -33,7 +46,7 @@ See the [arena guide](docs/arenas.md) for the terrain and warning windows on eac
 
 ## Run from source
 
-Open `project.godot` in Godot 4.7.2 and press **F5**, or run `godot --path .`. On a computer, use **WASD**, **1–6**, **Space**, and **Escape** for movement, abilities, dodge, and pause. Click fighters to select them, or use **Tab** to cycle enemies.
+Open `project.godot` in Godot 4.7.2 and press **F5**, or run `godot --path .`. On a computer, use **WASD** to move, **1–6** for abilities, **7** for the ultimate, **Space** to dodge, and **Escape** to pause. Click fighters to select them, or use **Tab** to cycle enemies.
 
 To export the practice build for a phone browser, install the matching Godot export templates and run the following from the repo root.
 
@@ -52,6 +65,9 @@ Open the server computer's Wi-Fi IP address on port 8000 in your phone browser w
 godot --headless --path . --script res://tests/mobile_rules_test.gd
 godot --headless --path . --script res://tests/mobile_touch_test.gd
 godot --headless --path . --script res://tests/mobile_guides_test.gd
+godot --headless --path . --script res://tests/arena_objectives_test.gd
+godot --headless --path . --script res://tests/mobile_ultimate_test.gd
+godot --headless --path . --script res://tests/ultimate_motion_test.gd
 godot --headless --path . --script res://tests/arena_match_test.gd
 godot --headless --path . --script res://tests/arena_scene_test.gd
 godot --headless --path . --script res://tests/champion_art_test.gd

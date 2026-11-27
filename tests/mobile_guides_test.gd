@@ -2,6 +2,7 @@ extends SceneTree
 
 const ArenaMaps = preload("res://scripts/arena_maps.gd")
 const ArenaStage = preload("res://scripts/arena_stage.gd")
+const MobileTouch = preload("res://scripts/mobile_touch.gd")
 
 var _checks := 0
 var _failures := 0
@@ -21,7 +22,7 @@ func _verify() -> void:
 		arena._start("forgecaller")
 		var game = arena.game
 		var guide: Dictionary = ArenaStage.ZONE_GUIDE[ArenaMaps.MAPS[map_id].kind]
-		_check(arena.hud._time_label.text == "3:00", "%s starts with a readable three-minute clock" % map_id)
+		_check(arena.hud._time_label.text == "5:00", "%s starts with a readable five-minute clock" % map_id)
 		_check(arena.hud._hint.text == "%s in 6 s  ·  %s" % [guide.name, guide.effect], "%s explains the next hazard before the warning" % map_id)
 		ArenaMaps.update(game, 5.0, 0.0)
 		arena._render()
@@ -71,6 +72,7 @@ func _verify() -> void:
 	arena.hud.selected_map = "lockwater"
 	_verify_cast_feedback(arena)
 	_verify_input_buffer(arena)
+	_verify_relic_and_ultimate(arena)
 	arena.queue_free()
 	await process_frame
 	print("Mobile battle guides: %d/%d checks passed" % [_checks - _failures, _checks])
@@ -152,3 +154,54 @@ func _check(condition: bool, detail: String) -> void:
 	if not condition:
 		_failures += 1
 		push_error(detail)
+
+
+func _verify_relic_and_ultimate(arena) -> void:
+	arena.hud.selected_map = "kiln"
+	arena.hud.roster_buttons["forgecaller"].pressed.emit()
+	_check("Godfall Hammer" in arena.hud._ultimate_preview.text, "The selected class exposes its named ultimate preview")
+	arena.hud._ultimate_preview.pressed.emit()
+	_check("incandescent hammer" in arena.hud._ability_info.text, "The ultimate preview explains the ability's impact and counterplay")
+	arena._start("forgecaller")
+	var game = arena.game
+	_check(arena.hud._relic_panel.visible and arena.hud._relic_name.text == "Cinderheart", "The map's relic is explained in combat")
+	_check("Opens in" in arena.hud._relic_status.text and "18%" in arena.hud._relic_bonus.text, "The relic card shows its reward and opens countdown")
+	var player: Dictionary = game.fighters[0]
+	player.position = Vector2(-1.0, 0.0)
+	game.fighters[3].position = Vector2(1.25, 0.0)
+	arena.selected_target = 3
+	for fighter in game.fighters.slice(1):
+		fighter.stun = 12.0
+		fighter.break_free_available = false
+	arena._render()
+	var at := root.get_visible_rect().size - (MobileTouch.OFFSETS[MobileTouch.ULTIMATE_BUTTON] as Vector2)
+	_tap(at)
+	_check("Ultimate charge" in arena.feedback and game.ultimate_windups.is_empty(), "An uncharged ultimate tap gives specific feedback")
+	player.ultimate_charge = 100.0
+	_tap(at)
+	arena._render()
+	_check(game.ultimate_windups.size() == 1 and game.cast_events.is_empty(), "The actual ultimate touch button starts a warning before the hit")
+	_check(arena.hud._ultimate_banner.visible and "Godfall Hammer" in arena.hud._ultimate_banner.text, "The player sees the named ultimate windup")
+	_check(arena.view._charging_ultimates.has(0), "A windup starts the authored character motion")
+	var warning_time: float = game.ultimate_windups[0].remaining
+	arena._toggle_pause()
+	arena._physics_process(2.0)
+	_check(is_equal_approx(game.ultimate_windups[0].remaining, warning_time), "Pause freezes the ultimate windup")
+	arena._continue_or_advance()
+	arena._physics_process(warning_time + 0.05)
+	arena._render()
+	_check(game.ultimate_windups.is_empty() and not arena.view._charging_ultimates.has(0), "The completed ultimate clears the alert state")
+	_check(not game.cast_events.is_empty() and game.cast_events.back().get("ultimate", false), "The actual tap resolves the ultimate through the cast pipeline")
+	_check(arena.hud._ultimate_banner.text == "Godfall Hammer", "Impact names the completed ultimate")
+	_check(game.fighters[0].ultimate_used, "The HUD tracks an ultimate spent this round")
+	arena._lobby()
+	_check(arena.view._charging_ultimates.is_empty() and arena.hud.battlefield.visible == false, "Leaving the match resets windup visuals and relic HUD")
+
+
+func _tap(at: Vector2) -> void:
+	for pressed: bool in [true, false]:
+		var event := InputEventScreenTouch.new()
+		event.index = 9
+		event.position = at
+		event.pressed = pressed
+		root.push_input(event, true)

@@ -78,7 +78,7 @@ func _check_dimensions(touch: Control) -> void:
 	var attack := _button_position(0)
 	_check(viewport_rect.has_point(stick) and viewport_rect.has_point(attack) and stick.distance_to(attack) > viewport_rect.size.x * 0.6,
 		"The movement and action thumb zones remain inside opposite edges")
-	_check(MobileTouch.OFFSETS.size() == 7 and MobileTouch.DODGE_BUTTON == 6, "Six combat actions preserve a distinct Dodge slot")
+	_check(MobileTouch.OFFSETS.size() == 8 and MobileTouch.DODGE_BUTTON == 6 and MobileTouch.ULTIMATE_BUTTON == 7, "Six combat actions have separate Dodge and Ultimate buttons")
 	var fit := true
 	var separate := true
 	for button in MobileTouch.OFFSETS.size():

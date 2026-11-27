@@ -14,6 +14,7 @@ const STICK_ROLE := -1
 const FIELD_ROLE := -2
 const IGNORED_ROLE := -3
 const DODGE_BUTTON := 6
+const ULTIMATE_BUTTON := 7
 const HIT_PADDING := 3.0
 const CONTROL_PADDING := 14.0
 const PRESS_MS := 110
@@ -31,8 +32,9 @@ const OFFSETS := [
 	Vector2(263, 153),
 	Vector2(266, 60),
 	Vector2(70, 255),
+	Vector2(173, 255),
 ]
-const RADII := [49.0, 39.0, 39.0, 39.0, 39.0, 39.0, 38.0]
+const RADII := [49.0, 39.0, 39.0, 39.0, 39.0, 39.0, 38.0, 45.0]
 const ACCENTS := {
 	"basic": Color("eabe76"),
 	"enemy": Color("ec987c"),
@@ -41,6 +43,7 @@ const ACCENTS := {
 	"aim": Color("d3afea"),
 	"dodge": Color("bccce1"),
 	"break_free": Color("f4c176"),
+	"ultimate": Color("ffd78a"),
 }
 const INK := Color("14101a")
 const TEXT := Color("fff0d6")
@@ -89,6 +92,8 @@ var _action_appearance: Array[ActionAppearance] = []
 var _buffered_button := -1
 var _pulse_draw_ms := 0
 var _had_pulse := false
+var _winding_up := false
+var _ultimate_percent := 0
 
 
 func _ready() -> void:
@@ -115,10 +120,11 @@ func set_active(value: bool) -> void:
 	queue_redraw()
 
 
-func update_fighter(fighter: Dictionary, slots: Array, resource: String) -> void:
+func update_fighter(fighter: Dictionary, slots: Array, resource: String, winding_up: bool = false) -> void:
 	_fighter = fighter
 	_slots = slots
 	_resource = resource
+	_winding_up = winding_up
 	if _active:
 		_update_action_appearance()
 
@@ -346,7 +352,24 @@ func _update_button_appearance(button: int, common_block: String, silenced: bool
 	var remaining := 0.0
 	var duration := ArenaMatch.DODGE_COOLDOWN
 	var blocked := common_block
-	if button == DODGE_BUTTON:
+	if button == ULTIMATE_BUTTON:
+		label = "Ultimate"
+		glyph = "ultimate"
+		var old_percent := _ultimate_percent
+		_ultimate_percent = clampi(floori(float(_fighter.get("ultimate_charge", 0.0)) + 0.0001), 0, 100)
+		if _winding_up:
+			blocked = "Casting"
+		elif bool(_fighter.get("ultimate_used", false)):
+			blocked = "Spent"
+		elif blocked.is_empty():
+			if silenced:
+				blocked = "Silenced"
+			elif _ultimate_percent < 100:
+				blocked = "%d%%" % _ultimate_percent
+			elif old_percent < 100:
+				_action_appearance[button].ready_until = now + READY_MS
+				_had_pulse = true
+	elif button == DODGE_BUTTON:
 		if ArenaMatch.can_break_free(_fighter):
 			label = "Break Free"
 			glyph = "break_free"
@@ -415,6 +438,14 @@ func _draw_button(button: int, now: int) -> void:
 	if button == DODGE_BUTTON:
 		# A second full ring makes Dodge recognizable by shape as well as color.
 		draw_arc(center, radius - 5.0, 0.0, TAU, 48, Color(border, 0.58), 1.0, true)
+	elif button == ULTIMATE_BUTTON:
+		var charge := float(_ultimate_percent) / 100.0
+		draw_arc(center, radius - 5.0, 0.0, TAU, 56, Color(accent, 0.20), 1.75, true)
+		if charge > 0.0:
+			draw_arc(center, radius - 5.0, -PI * 0.5, -PI * 0.5 + TAU * charge, 56, accent, 3.1, true)
+		for spoke in 8:
+			var axis := Vector2.UP.rotated(spoke * TAU / 8.0)
+			draw_line(center + axis * (radius + 1.5), center + axis * (radius + 4.0), border, 1.7, true)
 	if action.countdown > 0:
 		var sweep := TAU * float(action.dial) / DIAL_STEPS
 		draw_arc(center, radius - 4.0, -PI * 0.5, -PI * 0.5 + sweep, 64, accent, 2.8, true)
@@ -492,6 +523,12 @@ func _draw_glyph(glyph: String, at: Vector2, tint: Color) -> void:
 				var axis := Vector2.RIGHT.rotated(index * TAU / 4.0)
 				draw_line(at + axis * 7.0, at + axis * 13.0, tint, 2.0, true)
 			_draw_diamond(at, 4.1, tint)
+		"ultimate":
+			for index in 8:
+				var radius := 13.0 if index % 2 == 0 else 5.0
+				points.append(Vector2.UP.rotated(index * TAU / 8.0) * radius)
+			points.append(points[0])
+			_draw_diamond(at, 3.6, tint)
 		"dodge":
 			points = PackedVector2Array([Vector2(-13, -7), Vector2(-5, 0), Vector2(-13, 7)])
 			draw_polyline(PackedVector2Array([at + Vector2(-1, -10), at + Vector2(10, 0), at + Vector2(-1, 10)]), tint, 2.8, true)

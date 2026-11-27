@@ -1,14 +1,20 @@
 extends RefCounted
 
 const ArenaMaps = preload("res://scripts/arena_maps.gd")
+const ArenaObjectives = preload("res://scripts/arena_objectives.gd")
+const ArenaUltimates = preload("res://scripts/arena_ultimates.gd")
 const MobileKits = preload("res://scripts/mobile_kits.gd")
 const ARENA_RADIUS = ArenaMaps.RADIUS
 const ROUND_SECONDS = 60.0
 const ROUNDS_TO_WIN = 3
-const MOBILE_ROUND_SECONDS = 180.0
+const MOBILE_ROUND_SECONDS = 300.0
 const MOBILE_ROUNDS_TO_WIN = 3
-const MOBILE_HEALTH_MULTIPLIER = 4.0
+const MOBILE_HEALTH_MULTIPLIER = 7.5
 const MOBILE_BOT_ACTION_INTERVAL = 0.43
+const ULTIMATE_DEALT_CHARGE := 0.32
+const ULTIMATE_RECEIVED_CHARGE := 0.19
+const ULTIMATE_HEAL_CHARGE := 0.68
+const ULTIMATE_PREVENTED_CHARGE := 0.47
 const DODGE_COOLDOWN = 4.0
 const Masteries = preload("res://scripts/arena_masteries.gd")
 const KIT_MODULES = [
@@ -39,6 +45,8 @@ var environment_zones: Array[Dictionary] = []
 var map_hint: String = ""
 var fields: Array[Dictionary] = []
 var cast_events: Array[Dictionary] = []
+var ultimate_windups: Array[Dictionary] = []
+var objective: Dictionary = {}
 var last_cast_failure := ""
 var _cast_sequence: int = 0
 var _pending_cast: Dictionary = {}
@@ -137,6 +145,86 @@ func try_mobile_ability(button: int, target_id: int = -1) -> bool:
 	return try_ability(slots[button], target_id)
 
 
+func try_ultimate(target_id: int = -1) -> bool:
+	if not ultimate_blocker().is_empty():
+		return false
+	var actor: Dictionary = fighters[0]
+	return _begin_ultimate(actor, ArenaUltimates.warning(self, actor, target_id))
+
+
+func ultimate_blocker() -> String:
+	if not mobile_mode or phase != "active":
+		return "inactive"
+	return _ultimate_blocker_for(fighters[0])
+
+
+func _ultimate_blocker_for(fighter: Dictionary) -> String:
+	if not fighter.alive:
+		return "eliminated"
+	if fighter.ultimate_casting:
+		return "winding_up"
+	if fighter.ultimate_used:
+		return "used"
+	if fighter.stun > 0.0:
+		return "stun"
+	if has_status(fighter, "silence"):
+		return "silence"
+	if fighter.mend_time > 0.0:
+		return "channel"
+	if fighter.ultimate_charge < ArenaUltimates.CHARGE_REQUIRED:
+		return "charge"
+	return ""
+
+
+func _begin_ultimate(fighter: Dictionary, preview: Dictionary) -> bool:
+	fighter.ultimate_charge = 0.0
+	fighter.ultimate_used = true
+	fighter.ultimate_casting = true
+	fighter.facing = preview.facing
+	ultimate_windups.append(preview)
+	return true
+
+
+func _tick_ultimates(delta: float) -> void:
+	# Advance a snapshot because one resolving cast can interrupt the next caster.
+	for preview in ultimate_windups.duplicate():
+		var caster: Dictionary = fighters[preview.source_id]
+		if not caster.ultimate_casting:
+			continue
+		if not caster.alive or caster.stun > 0.0 or has_status(caster, "silence"):
+			_cancel_ultimate(caster)
+			continue
+		preview.remaining = maxf(0.0, float(preview.remaining) - delta)
+		if preview.remaining > 0.000001:
+			continue
+		caster.ultimate_casting = false
+		ultimate_windups.erase(preview)
+		_pending_cast = preview.duplicate()
+		_pending_cast.affected_ids = []
+		_pending_cast.affected_positions = {}
+		ArenaUltimates.resolve(self, caster, preview)
+		_record_cast(caster)
+		_check_round_end()
+		if phase != "active":
+			break
+
+
+func _cancel_ultimate(fighter: Dictionary) -> void:
+	if not fighter.get("ultimate_casting", false):
+		return
+	fighter.ultimate_casting = false
+	for preview in ultimate_windups:
+		if preview.source_id == fighter.id:
+			ultimate_windups.erase(preview)
+			_announce("%s lost their ultimate." % _fighter_name(fighter))
+			return
+
+
+func _gain_ultimate(fighter: Dictionary, amount: float) -> void:
+	if mobile_mode and amount > 0.0 and fighter.get("alive", false) and not fighter.get("ultimate_used", true):
+		fighter.ultimate_charge = minf(ArenaUltimates.CHARGE_REQUIRED, fighter.ultimate_charge + amount)
+
+
 func try_ability(slot: int, target_id: int = -1) -> bool:
 	last_cast_failure = ""
 	if phase != "active" or slot < 0 or slot >= fighters[0].cooldowns.size():
@@ -164,7 +252,7 @@ func mobile_cast_blocker(slot: int) -> String:
 		return "stun"
 	if slot != 0 and has_status(actor, "silence"):
 		return "silence"
-	if actor.mend_time > 0.0:
+	if actor.mend_time > 0.0 or actor.ultimate_casting:
 		return "channel"
 	if actor.meter < actor.abilities[slot].cost:
 		return "resource"
@@ -192,7 +280,9 @@ func try_break_free() -> bool:
 
 func _start_round() -> void:
 	ArenaMaps.prepare(self)
+	ArenaObjectives.prepare(self)
 	cast_events.clear()
+	ultimate_windups.clear()
 	fields.clear()
 	fighters.clear()
 	for index in _lineup.size():
@@ -208,7 +298,7 @@ func _start_round() -> void:
 func _make_fighter(index: int, team: int, class_id: String) -> Dictionary:
 	var max_health: float = CLASS_INFO[class_id].max_health
 	if mobile_mode:
-		max_health *= MOBILE_HEALTH_MULTIPLIER
+		max_health = roundf(max_health * MOBILE_HEALTH_MULTIPLIER)
 	var side = -1.0 if team == 0 else 1.0
 	return {
 		"id": index,
@@ -225,6 +315,9 @@ func _make_fighter(index: int, team: int, class_id: String) -> Dictionary:
 		"abilities": loadout(class_id, _mastery_choices[index]),
 		"statuses": {}, "marks": {},
 		"shield_hp": 0.0, "shield_time": 0.0,
+		"shield_source": -1,
+		"ultimate_charge": 0.0, "ultimate_used": false, "ultimate_casting": false,
+		"ultimate_healable": 0.0,
 		"dodge_cooldown": 0.0,
 		"break_free_available": true,
 		"evade": 0.0,
@@ -259,6 +352,10 @@ func _step_slice(delta: float, movement: Vector2, facing: Vector2) -> void:
 	_check_round_end()
 	if phase != "active":
 		return
+	if mobile_mode and not ultimate_windups.is_empty():
+		_tick_ultimates(delta)
+		if phase != "active":
+			return
 	for fighter in fighters:
 		if fighter.alive and fighter.mend_time > 0.0:
 			fighter.mend_time = maxf(0.0, float(fighter.mend_time) - delta)
@@ -278,6 +375,9 @@ func _step_slice(delta: float, movement: Vector2, facing: Vector2) -> void:
 			_check_round_end()
 			if phase != "active":
 				break
+	if mobile_mode and phase == "active":
+		ArenaObjectives.tick(self, delta)
+		_check_round_end()
 
 
 func _tick_fighter(fighter: Dictionary, delta: float) -> void:
@@ -298,7 +398,7 @@ func _tick_fighter(fighter: Dictionary, delta: float) -> void:
 
 
 func _can_act(fighter: Dictionary) -> bool:
-	return fighter.alive and fighter.stun <= 0.0 and fighter.mend_time <= 0.0
+	return fighter.alive and fighter.stun <= 0.0 and fighter.mend_time <= 0.0 and not fighter.ultimate_casting
 
 
 static func can_break_free(fighter: Dictionary) -> bool:
@@ -350,6 +450,9 @@ func _check_round_end() -> void:
 			winner = 0 if percentage_difference > 0.0 else 1
 	round_winner = winner
 	phase = "round_over"
+	ultimate_windups.clear()
+	for fighter in fighters:
+		fighter.ultimate_casting = false
 	if winner == -1:
 		_announce("Round %d ended in a draw." % round_number)
 		return
@@ -379,6 +482,13 @@ func _use_ability(fighter: Dictionary, slot: int, target_id: int) -> bool:
 	if not _modules_by_class[fighter.class_id].cast(self, fighter, slot, target_id):
 		_pending_cast = {}
 		return false
+	_record_cast(fighter)
+	fighter.meter = clampf(fighter.meter - ability.cost + ability.gain, 0.0, 100.0)
+	fighter.cooldowns[slot] = maxf(fighter.cooldowns[slot], ability.cooldown)
+	return true
+
+
+func _record_cast(fighter: Dictionary) -> void:
 	_cast_sequence += 1
 	_pending_cast.seq = _cast_sequence
 	_pending_cast.source_after = fighter.position
@@ -386,9 +496,6 @@ func _use_ability(fighter: Dictionary, slot: int, target_id: int) -> bool:
 	_pending_cast = {}
 	if cast_events.size() > 96:
 		cast_events.pop_front()
-	fighter.meter = clampf(fighter.meter - ability.cost + ability.gain, 0.0, 100.0)
-	fighter.cooldowns[slot] = maxf(fighter.cooldowns[slot], ability.cooldown)
-	return true
 
 
 func _use_breakwater(fighter: Dictionary, slot: int, target_id: int) -> bool:
@@ -430,7 +537,7 @@ func _use_threadkeeper(fighter: Dictionary, slot: int, target_id: int) -> bool:
 		return false
 	match slot:
 		1:
-			ally.health = minf(ally.max_health, float(ally.health) + 30.0)
+			heal(fighter, ally, 30.0)
 		2:
 			ally.wound_time = 4.0
 		3:
@@ -444,6 +551,7 @@ func _finish_mend(fighter: Dictionary) -> void:
 	fighter.mend_target = -1
 	if not ally.is_empty():
 		ally.wound_time = 0.0
+		_gain_ultimate(fighter, float(ally.wound_damage) * ULTIMATE_PREVENTED_CHARGE)
 		ally.wound_damage = 0.0
 		var recipient = "your" if ally.id == 0 else "%s's" % _fighter_name(ally)
 		_announce("%s cleared %s delayed damage." % [_fighter_name(fighter), recipient])
@@ -502,23 +610,42 @@ func _deal_damage(source: Dictionary, target: Dictionary, damage: float) -> bool
 		return false
 	_note_affected(target)
 	damage *= 1.0 - clampf(_power(source, "weaken"), 0.0, 0.9)
+	if mobile_mode:
+		damage *= _mobile_damage_modifier(source, target)
 	if target.brace > 0.0:
 		var incoming = (source.position as Vector2) - (target.position as Vector2)
 		if incoming.normalized().dot(target.facing) > 0.25:
+			var before := damage
 			damage *= 0.2 if target.brace > 0.6 else 0.55
+			_gain_ultimate(target, (before - damage) * ULTIMATE_PREVENTED_CHARGE)
 	for protector in fighters:
 		if protector.alive and protector.guard_time > 0.0 and protector.guard_target == target.id:
 			if (protector.position as Vector2).distance_squared_to(target.position) <= 36.0:
 				var redirected = damage * 0.35
 				damage -= redirected
-				_receive_damage(protector, redirected)
+				_receive_damage(protector, redirected, true, source)
+				_gain_ultimate(protector, redirected * ULTIMATE_PREVENTED_CHARGE)
 			break
-	_receive_damage(target, damage)
+	_receive_damage(target, damage, true, source)
 	return true
 
 
-func _receive_damage(fighter: Dictionary, damage: float, direct: bool = true) -> void:
+func _mobile_damage_modifier(source: Dictionary, target: Dictionary) -> float:
+	var relic_multiplier := ArenaObjectives.damage_multiplier(self, source, target)
+	var fortified := 1.0 - clampf(_power(target, "fortify"), 0.0, 0.9)
+	return minf(relic_multiplier, fortified) if relic_multiplier < 1.0 else relic_multiplier * fortified
+
+
+func _receive_damage(fighter: Dictionary, damage: float, direct: bool = true, source: Dictionary = {}) -> void:
 	var absorbed := minf(damage, fighter.shield_hp)
+	var combat_credit: bool = mobile_mode and not source.is_empty() and fighter.team != source.team
+	var effective := minf(damage, float(fighter.health) + absorbed)
+	var previous_health: float = fighter.health
+	if combat_credit:
+		_gain_ultimate(source, effective * ULTIMATE_DEALT_CHARGE)
+		_gain_ultimate(fighter, effective * ULTIMATE_RECEIVED_CHARGE)
+		if absorbed > 0.0 and fighter.shield_source >= 0:
+			_gain_ultimate(fighters[fighter.shield_source], absorbed * ULTIMATE_PREVENTED_CHARGE)
 	fighter.shield_hp -= absorbed
 	damage -= absorbed
 	if direct and fighter.wound_time > 0.0:
@@ -526,6 +653,8 @@ func _receive_damage(fighter: Dictionary, damage: float, direct: bool = true) ->
 		fighter.wound_damage += deferred
 		damage -= deferred
 	_apply_damage(fighter, damage)
+	if combat_credit:
+		fighter.ultimate_healable += maxf(0.0, previous_health - float(fighter.health))
 
 
 func _apply_damage(fighter: Dictionary, damage: float) -> void:
@@ -534,6 +663,7 @@ func _apply_damage(fighter: Dictionary, damage: float) -> void:
 	fighter.health = maxf(0.0, float(fighter.health) - damage)
 	if fighter.health <= 0.0:
 		fighter.alive = false
+		_cancel_ultimate(fighter)
 		_announce("You were defeated." if fighter.id == 0 else "%s was defeated." % _fighter_name(fighter))
 
 
@@ -627,10 +757,19 @@ func _step_bot(bot: Dictionary, delta: float) -> void:
 			direction = heading
 		elif distance < preferred - 0.65:
 			direction = -heading if preferred > 3.0 else heading.orthogonal()
+		if mobile_mode:
+			var objective_direction: Variant = ArenaObjectives.bot_direction(self, bot)
+			if objective_direction is Vector2:
+				direction = objective_direction
 		var avoidance := ArenaMaps.avoidance_direction(self, origin, direction)
 		if not avoidance.is_zero_approx():
 			direction = avoidance
 			moving_to_safety = true
+		if mobile_mode and not moving_to_safety:
+			var ultimate_escape := _bot_ultimate_escape(bot)
+			if not ultimate_escape.is_zero_approx():
+				direction = ultimate_escape
+				moving_to_safety = true
 	if not moving_to_safety and bot.bot_wait <= 0.0:
 		var interval := MOBILE_BOT_ACTION_INTERVAL if mobile_mode else 0.25
 		bot.bot_wait = interval + float(int(bot.id) % 3) * 0.045
@@ -646,12 +785,31 @@ func _bot_ability(bot: Dictionary, enemy: Dictionary, distance: float) -> bool:
 	var kit: Dictionary = CLASS_INFO[bot.class_id]
 	if distance > 11.0:
 		return false
+	if mobile_mode and _ultimate_blocker_for(bot).is_empty():
+		var spec: Dictionary = ArenaUltimates.KITS[bot.class_id]
+		var preview := ArenaUltimates.warning(self, bot, enemy.id if spec.side == "enemy" else -1)
+		if ArenaUltimates.can_usefully_resolve(self, preview):
+			return _begin_ultimate(bot, preview)
 	for slot in kit.get("priority", [7, 6, 5, 4, 3, 2, 1, 0]):
 		var skill: Dictionary = bot.abilities[slot]
 		var target_id: int = enemy.id if skill.target == "enemy" else -1
 		if _use_ability(bot, slot, target_id):
 			return true
 	return false
+
+
+func _bot_ultimate_escape(bot: Dictionary) -> Vector2:
+	var origin: Vector2 = bot.position
+	for preview in ultimate_windups:
+		if preview.team == bot.team or preview.target_kind == "ally" or not ArenaUltimates.contains(preview, origin, 0.45):
+			continue
+		# Some bots react sooner than others, giving a planted cast a fair shot.
+		if preview.duration - preview.remaining < 0.20 + float(int(bot.id) % 3) * 0.12:
+			continue
+		var center := ArenaUltimates.closest_point(preview, origin)
+		var away := (origin - center).normalized()
+		return away if not away.is_zero_approx() else (bot.facing as Vector2).orthogonal()
+	return Vector2.ZERO
 
 
 func _face(fighter: Dictionary, point: Vector2) -> void:
@@ -713,22 +871,30 @@ func _announce(message: String) -> void:
 		feed.pop_back()
 
 
-func heal(_source: Dictionary, target: Dictionary, amount: float) -> bool:
+func heal(source: Dictionary, target: Dictionary, amount: float) -> bool:
 	if not target.alive or amount <= 0.0 or target.health >= target.max_health:
 		return false
 	_note_affected(target)
-	target.health = minf(target.max_health, target.health + amount)
+	var restored := minf(amount, float(target.max_health) - float(target.health))
+	if mobile_mode:
+		var healable: float = target.get("ultimate_healable", 0.0)
+		var combat_healed := minf(restored, healable)
+		_gain_ultimate(source, combat_healed * ULTIMATE_HEAL_CHARGE)
+		target.ultimate_healable = maxf(0.0, healable - combat_healed)
+	target.health += restored
 	return true
 
 
-func shield(target: Dictionary, amount: float, seconds: float) -> void:
+func shield(target: Dictionary, amount: float, seconds: float, source_id: int = -1) -> void:
 	if target.alive and amount >= target.shield_hp:
 		_note_affected(target)
 		target.shield_hp = amount
 		target.shield_time = seconds
+		target.shield_source = _pending_cast.get("source_id", target.id) if source_id < 0 else source_id
 
 
 func interrupt(target: Dictionary) -> void:
+	_cancel_ultimate(target)
 	target.mend_time = 0.0
 	target.mend_target = -1
 
@@ -789,7 +955,10 @@ func _tick_effects(fighter: Dictionary, delta: float) -> void:
 		var dt := minf(delta, effect.remaining)
 		var source: Dictionary = fighters[effect.source] if effect.source >= 0 else fighter
 		if effect.kind == "burn":
-			_receive_damage(fighter, dt * effect.power * (1.0 - clampf(_power(source, "weaken"), 0.0, 0.9)), false)
+			var burn: float = dt * effect.power * (1.0 - clampf(_power(source, "weaken"), 0.0, 0.9))
+			if mobile_mode:
+				burn *= _mobile_damage_modifier(source, fighter)
+			_receive_damage(fighter, burn, false, source)
 		elif effect.kind == "regen":
 			heal(source, fighter, dt * effect.power)
 		effect.remaining -= dt
@@ -850,7 +1019,7 @@ func _tick_fields(delta: float) -> void:
 						heal(source, fighter, field.power * dt)
 				"ward":
 					if friendly and field.pulse <= 0.0:
-						shield(fighter, field.power, 1.05)
+						shield(fighter, field.power, 1.05, source.id)
 				"slow":
 					if not friendly:
 						afflict(fighter, "slow", 0.15, field.power, field.source)

@@ -38,6 +38,7 @@ func _ready() -> void:
 	add_child(view)
 	view.champion_fell.connect(audio_cues.elimination)
 	view.cast_released.connect(_cast_released)
+	view.ultimate_started.connect(audio_cues.ultimate_windup)
 	add_child(hud)
 	hud.class_chosen.connect(_start)
 	hud.advance_pressed.connect(_continue_or_advance)
@@ -135,7 +136,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	else:
 		var slot: int = ABILITY_KEYS.find(key)
 		if mobile_mode:
-			_cast_mobile(slot)
+			if key == KEY_7:
+				_cast_mobile(MobileTouch.ULTIMATE_BUTTON)
+			elif slot < mobile_slots.size():
+				_cast_mobile(slot)
 		elif slot >= 0:
 			_cast(slot)
 
@@ -168,6 +172,9 @@ func _touch_target(at: Vector2) -> void:
 
 
 func _cast_mobile(button: int) -> void:
+	if button == MobileTouch.ULTIMATE_BUTTON:
+		_cast_ultimate()
+		return
 	if game.phase != "active" or leave_prompt or button < 0 or button >= mobile_slots.size():
 		return
 	if button == 0:
@@ -186,6 +193,28 @@ func _cast_mobile(button: int) -> void:
 			return
 	if not _aim_and_cast_mobile(slot, fighter):
 		touch.refuse(button)
+
+
+func _cast_ultimate() -> void:
+	if not mobile_mode or game.phase != "active" or leave_prompt:
+		return
+	var fighter: Dictionary = game.fighters[0]
+	var aim := _mobile_aim(fighter)
+	if aim.length_squared() > 0.03:
+		fighter.facing = aim.normalized()
+	if game.try_ultimate(selected_target):
+		_clear_queued_cast()
+		feedback_time = 0.0
+		return
+	touch.refuse(MobileTouch.ULTIMATE_BUTTON)
+	match game.ultimate_blocker():
+		"charge": _set_feedback("Ultimate charge · %d%%" % floori(fighter.ultimate_charge))
+		"used": _set_feedback("Ultimate spent for this round")
+		"winding_up": _set_feedback("Ultimate already casting")
+		"silence": _set_feedback("Silenced · Cannot use your ultimate")
+		"stun": _set_feedback("Stunned · Cannot use your ultimate")
+		"channel": _set_feedback("Finish your current cast first")
+		_: _set_feedback("Cannot use your ultimate right now")
 
 
 func _aim_and_cast_mobile(slot: int, fighter: Dictionary) -> bool:
@@ -380,7 +409,8 @@ func _render() -> void:
 		touch.set_active(playing)
 		if playing:
 			var player: Dictionary = game.fighters[0]
-			touch.update_fighter(player, mobile_slots, ArenaMatch.CLASS_INFO[player.class_id].resource)
+			var charging: bool = game.ultimate_windups.any(func(windup: Dictionary) -> bool: return windup.source_id == 0)
+			touch.update_fighter(player, mobile_slots, ArenaMatch.CLASS_INFO[player.class_id].resource, charging)
 	if game.phase == "idle" and (game.terrain.is_empty() or game.map_id != hud.selected_map):
 		game.map_id = hud.selected_map
 		game.ArenaMaps.prepare(game)
@@ -389,9 +419,13 @@ func _render() -> void:
 	if not game.cast_events.is_empty() and game.cast_events.back().seq > last_seen_cast:
 		for event in game.cast_events:
 			if event.seq > last_seen_cast:
-				audio_cues.windup(event)
+				if not event.get("ultimate", false):
+					audio_cues.windup(event)
 				view.play_cast(event)
 				last_seen_cast = event.seq
+	if mobile_mode:
+		view.update_specials(game.objective, game.ultimate_windups)
+		audio_cues.objective(game.objective, game.phase == "active")
 	audio_cues.environment(game.map_id, game.environment_zones, game.phase == "active")
 	hud.update_match(game, selected_target, leave_prompt, feedback if feedback_time > 0.0 else "")
 
@@ -401,7 +435,7 @@ func _cast_released(event: Dictionary) -> void:
 	if mobile_mode:
 		hud.record_cast(event, selected_target)
 		if event.source_id == 0:
-			touch.cue(mobile_slots.find(event.slot))
+			touch.cue(MobileTouch.ULTIMATE_BUTTON if event.get("ultimate", false) else mobile_slots.find(event.slot))
 
 
 func _sync_presentation_options() -> void:

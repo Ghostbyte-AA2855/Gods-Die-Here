@@ -224,16 +224,23 @@ func show_champion(class_id: String, archetype: String) -> void:
 
 
 func play_ability(slot: int) -> void:
+	_play_preview("cast_%d" % (slot + 1), 0.22)
+
+
+func play_ultimate() -> void:
+	_play_preview("ultimate", 0.34)
+
+
+func _play_preview(clip: String, wake: float) -> void:
 	if not is_instance_valid(champion):
 		return
-	var clip := "cast_%d" % (slot + 1)
 	if not champion.player.has_animation(clip):
 		return
 	champion.player.stop()
 	champion.player.play(clip)
 	champion.player.advance(0.0)
 	_preview_framing(clip)
-	_invocation = 0.22
+	_invocation = wake
 
 
 func idle() -> void:
@@ -296,7 +303,7 @@ func _draw() -> void:
 
 
 func _on_animation_finished(clip: StringName) -> void:
-	if str(clip).begins_with("cast_"):
+	if clip == &"ultimate" or str(clip).begins_with("cast_"):
 		champion.player.play("idle", 0.08)
 		_current_bounds = _framing[champion.champion + "/idle"]
 		_frame_camera(false)
@@ -327,7 +334,7 @@ func _process(delta: float) -> void:
 	_backdrop_material.set_shader_parameter("invocation", _invocation)
 	_ground_material.set_shader_parameter("invocation", _invocation)
 	_rim_light.light_energy = 2.60 + _invocation * 0.92
-	_dais_light.albedo_color = _patron_tint.darkened(0.48 - 0.32 * _invocation)
+	_dais_light.albedo_color = _patron_tint.darkened(maxf(0.0, 0.48 - 0.32 * _invocation))
 	for index in MOTE_COUNT:
 		var phase := fposmod(_stage_age * (0.105 + 0.013 * float(index % 5)) + float(index) * 0.38197, 1.0)
 		var angle := index * 2.39996 + phase * 0.9

@@ -9,6 +9,8 @@ signal presentation_option_changed(option: String, enabled: bool)
 const ArenaMatch = preload("res://scripts/arena_match.gd")
 const ArenaMaps = preload("res://scripts/arena_maps.gd")
 const ArenaStage = preload("res://scripts/arena_stage.gd")
+const ArenaObjectives = preload("res://scripts/arena_objectives.gd")
+const ArenaUltimates = preload("res://scripts/arena_ultimates.gd")
 const LobbyPreview = preload("res://scripts/champions/lobby_preview.gd")
 const BattleGuides = preload("res://scripts/mobile_battle_guides.gd")
 const MobileKits = preload("res://scripts/mobile_kits.gd")
@@ -57,6 +59,7 @@ var _loadout_panel: PanelContainer
 var _kit_panel: VBoxContainer
 var _arena_panel: VBoxContainer
 var _ability_rows: Array[Button] = []
+var _ultimate_preview: Button
 var _tab_rows: Array[Button] = []
 var _class_label: Label
 var _patron_label: Label
@@ -93,6 +96,15 @@ var _cast_cards: Array[PanelContainer] = []
 var _cast_roles: Array[Label] = []
 var _cast_names: Array[Label] = []
 var _cast_until := PackedInt64Array([0, 0])
+var _ultimate_banner: Label
+var _relic_panel: PanelContainer
+var _relic_name: Label
+var _relic_status: Label
+var _relic_bonus: Label
+var _relic_progress: ProgressBar
+var _ultimate_impact_name := ""
+var _ultimate_impact_team := 0
+var _ultimate_impact_round_time := -1.0
 
 
 func _ready() -> void:
@@ -230,6 +242,12 @@ func _build_ability_list() -> void:
 		button.pressed.connect(_select_ability.bind(slot))
 		grid.add_child(button)
 		_ability_rows.append(button)
+	_ultimate_preview = _button("", 53, 17, true)
+	_ultimate_preview.toggle_mode = true
+	_ultimate_preview.button_group = selection
+	_ultimate_preview.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_ultimate_preview.pressed.connect(_preview_ultimate)
+	_kit_panel.add_child(_ultimate_preview)
 	_ability_info = _wrapped_label("", 17, IVORY)
 	_ability_info.custom_minimum_size.y = 96
 	_kit_panel.add_child(_ability_info)
@@ -262,7 +280,8 @@ func _select_map(map_id: String) -> void:
 	var arena: Dictionary = ArenaMaps.MAPS[map_id]
 	map_buttons[map_id].set_pressed_no_signal(true)
 	var guide: Dictionary = ArenaStage.ZONE_GUIDE[arena.kind]
-	_map_info.text = "%s · %s\n%s" % [guide.name, guide.effect, guide.tip]
+	var relic: Dictionary = ArenaObjectives.RELICS[map_id]
+	_map_info.text = "%s\n%s\n\n%s · %s\n%s" % [relic.name, relic.effect, guide.name, guide.effect, guide.tip]
 	_map_label.text = arena.name
 
 
@@ -276,6 +295,10 @@ func _select_class(class_id: String) -> void:
 	_champion_label.text = god[2]
 	_lore.text = god[3]
 	champion_preview.show_champion(class_id, kit.archetype)
+	var ultimate: Dictionary = ArenaUltimates.KITS[class_id]
+	_ultimate_preview.text = "ULTIMATE\n" + ultimate.name
+	_ultimate_preview.tooltip_text = ultimate.name
+	_ultimate_preview.set_pressed_no_signal(false)
 	var indexes: Array = MobileKits.slots(class_id)
 	for slot in indexes.size():
 		var ability: Dictionary = kit.abilities[indexes[slot]]
@@ -289,6 +312,12 @@ func _select_class(class_id: String) -> void:
 func _select_ability(slot: int) -> void:
 	_refresh_ability(slot)
 	champion_preview.play_ability(MobileKits.slots(preview_class)[slot])
+
+
+func _preview_ultimate() -> void:
+	var ultimate: Dictionary = ArenaUltimates.KITS[preview_class]
+	_ability_info.text = "One use per round · Build charge in combat\n%s" % ultimate.description
+	champion_preview.play_ultimate()
 
 
 func _refresh_ability(slot: int) -> void:
@@ -366,11 +395,32 @@ func _build_battlefield() -> void:
 	messages.offset_left = -360
 	messages.offset_right = 360
 	messages.offset_top = 130
+	_ultimate_banner = _battle_label(messages, 25, GOLD)
+	_ultimate_banner.hide()
 	_hint = _battle_label(messages, 19, GOLD)
 	_notice = _battle_label(messages, 20, IVORY)
 	_feed = _battle_label(messages, 16, MUTED)
+	_build_objective_panel()
 	_battle_guides = BattleGuides.new()
 	battlefield.add_child(_battle_guides)
+
+
+func _build_objective_panel() -> void:
+	_relic_panel = _panel(battlefield, Color("13131aef"), 11)
+	_relic_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_relic_panel.offset_left = -228
+	_relic_panel.offset_right = 228
+	_relic_panel.offset_top = -119
+	_relic_panel.offset_bottom = -15
+	var stack := _column(_relic_panel, 3)
+	_relic_name = _label("", 19, GOLD, HORIZONTAL_ALIGNMENT_CENTER, true)
+	_relic_status = _label("", 16, IVORY, HORIZONTAL_ALIGNMENT_CENTER)
+	_relic_bonus = _label("", 15, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	stack.add_child(_relic_name)
+	stack.add_child(_relic_status)
+	_relic_progress = _meter(stack, GOLD, 5)
+	stack.add_child(_relic_bonus)
+	_relic_panel.hide()
 
 
 func _build_cast_card(side: int) -> void:
@@ -466,7 +516,9 @@ func update_match(game: ArenaMatch, target: int, quit_prompt: bool, feedback: St
 		clear_battle_cues()
 		return
 	var running: bool = game.phase == "active" and not quit_prompt
-	_battle_guides.update_battle(get_viewport().get_camera_3d(), game.environment_zones, game.fields, game.fighters, target, running)
+	_update_ultimate_banner(game, running)
+	_update_relic_panel(game.objective, running)
+	_battle_guides.update_battle(get_viewport().get_camera_3d(), game.environment_zones, game.fields, game.fighters, target, running, game.objective, _ultimate_banner.visible)
 	_update_cast_cards(running)
 	_pause.disabled = game.phase != "active" or quit_prompt
 	_round_label.text = "ROUND %d  /  FIRST TO %d" % [game.round_number, game.round_limit()]
@@ -506,6 +558,45 @@ func _arena_hint(game: ArenaMatch) -> String:
 	return "%s %s  ·  %s" % [guide.name, status, guide.effect]
 
 
+func _update_relic_panel(relic: Dictionary, running: bool) -> void:
+	_relic_panel.visible = running and not relic.is_empty()
+	if not _relic_panel.visible:
+		return
+	_relic_name.text = relic.name
+	var side := "Your team" if relic.team == 0 else "Rivals"
+	match relic.phase:
+		"arming":
+			_relic_status.text = "Opens in %d s" % ceili(relic.time_left)
+		"contested":
+			_relic_status.text = "Contested · Clear rivals from the circle"
+		"cooldown":
+			_relic_status.text = "%s claimed it · Reopens in %d s" % [side, ceili(relic.time_left)]
+		_:
+			_relic_status.text = "%s claiming · %.1f / %.0f s" % [side, relic.progress, relic.hold] if relic.team >= 0 else "Hold the circle for %.0f s" % relic.hold
+	_relic_progress.max_value = relic.hold
+	_relic_progress.value = relic.progress
+	_relic_bonus.text = relic.effect if relic.buff_left <= 0 else "%s · %d s left" % [relic.effect.split(" for ")[0], ceili(relic.buff_left)]
+
+
+func _update_ultimate_banner(game: ArenaMatch, running: bool) -> void:
+	var chosen: Dictionary = {}
+	if running:
+		for entry: Dictionary in game.ultimate_windups:
+			if chosen.is_empty() or (entry.team == 1 and chosen.team == 0) or (entry.team == chosen.team and entry.remaining < chosen.remaining):
+				chosen = entry
+	if running and not _ultimate_impact_name.is_empty() and _ultimate_impact_round_time < 0.0:
+		_ultimate_impact_round_time = game.round_time
+	var released := running and _ultimate_impact_round_time >= 0.0 and _ultimate_impact_round_time - game.round_time < 1.6
+	_ultimate_banner.visible = not chosen.is_empty() or released
+	if not chosen.is_empty():
+		var who := "RIVAL WINDUP" if chosen.team == 1 else "YOUR WINDUP" if chosen.source_id == 0 else "ALLY WINDUP"
+		_ultimate_banner.text = "%s · %s · %.1f s" % [who, chosen.name, chosen.remaining]
+		_ultimate_banner.modulate = FOE if chosen.team == 1 else GOLD
+	elif released:
+		_ultimate_banner.text = _ultimate_impact_name
+		_ultimate_banner.modulate = FOE if _ultimate_impact_team == 1 else GOLD
+
+
 func _player_notice(game: ArenaMatch, feedback: String) -> String:
 	var point: Vector2 = game.fighters[0].position
 	if game.safe_radius < ArenaMatch.ARENA_RADIUS and point.length_squared() > game.safe_radius * game.safe_radius:
@@ -518,9 +609,14 @@ func _player_notice(game: ArenaMatch, feedback: String) -> String:
 
 func record_cast(event: Dictionary, locked: int) -> void:
 	_battle_guides.record_cast(event, locked)
+	if event.get("ultimate", false):
+		_ultimate_impact_name = event.name
+		_ultimate_impact_team = event.team
+		_ultimate_impact_round_time = -1.0
 	var player_effect: bool = event.target_id == 0 or 0 in event.affected_ids
 	if event.source_id == 0:
-		_show_cast(0, "YOUR ATTACK" if event.slot == 0 else "YOUR ABILITY", event)
+		var role := "YOUR ULTIMATE" if event.get("ultimate", false) else "YOUR ATTACK" if event.slot == 0 else "YOUR ABILITY"
+		_show_cast(0, role, event)
 	elif event.slot > 0 and (player_effect or (event.team == 1 and event.source_id == locked)):
 		var role := "ALLY SUPPORT" if event.team == 0 else ("RIVAL · ON YOU" if player_effect else "RIVAL ABILITY")
 		_show_cast(1, role, event)
@@ -528,6 +624,8 @@ func record_cast(event: Dictionary, locked: int) -> void:
 
 func clear_battle_cues() -> void:
 	_cast_until.fill(0)
+	_ultimate_impact_name = ""
+	_ultimate_impact_round_time = -1.0
 	_battle_guides.clear_casts()
 	_battle_guides.hide()
 	for card in _cast_cards:
@@ -568,7 +666,7 @@ func _reveal_result(show_result: bool, paused: bool) -> void:
 func _update_vitals(game: ArenaMatch, target: int) -> void:
 	var fighter: Dictionary = game.fighters[0]
 	var kit: Dictionary = ArenaMatch.CLASS_INFO[fighter.class_id]
-	_fighter_label.text = "%s   %d / %d HP" % [kit.name, ceili(fighter.health), fighter.max_health]
+	_fighter_label.text = "%s   %d / %d HP" % [kit.name, ceili(fighter.health), ceili(fighter.max_health)]
 	_health_bar.max_value = fighter.max_health
 	_health_bar.value = fighter.health
 	_resource_bar.value = fighter.get("meter", 0)

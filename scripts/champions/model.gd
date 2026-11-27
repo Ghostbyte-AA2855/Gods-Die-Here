@@ -22,6 +22,7 @@ const JOINT_LAYOUT := {
 const Anatomy = preload("res://scripts/champions/anatomy.gd")
 const Finish = preload("res://scripts/champions/surface_finish.gd")
 const Animations = preload("res://scripts/champions/animations.gd")
+const UltimateMotion = preload("res://scripts/champions/ultimate_motion.gd")
 const GROUPS := {
 	"breakwater":0, "threadkeeper":0, "echo_duelist":0, "forgecaller":0,
 	"lamplighter":1, "longwatch":1, "sluicecaller":1, "glassmage":1,
@@ -50,6 +51,9 @@ var _step_phase := 0.0
 var _playback_cadence := 1.0
 var _cast_recoil := 0.0
 var _cast_light := 0.0
+var _ultimate_contact := 0.0
+var _ultimate_windup_rate := 0.0
+var _ultimate_recovery := 0.0
 var _luminous: Array[StandardMaterial3D] = []
 var _rest_emission: PackedFloat32Array = []
 
@@ -97,6 +101,7 @@ func build(class_id: String, archetype: String) -> void:
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	add_child(player)
 	player.add_animation_library("", Animations.library(champion, archetype, self))
+	_ultimate_contact = UltimateMotion.contact_time(champion)
 	player.play("idle")
 	player.advance(0.0)
 
@@ -109,6 +114,8 @@ func reset_motion() -> void:
 	_step_phase = 0.0
 	_playback_cadence = 1.0
 	_cast_recoil = 0.0
+	_ultimate_windup_rate = 0.0
+	_ultimate_recovery = 0.0
 	player.speed_scale = 1.0
 	player.play("idle")
 	player.seek(0.0, true)
@@ -139,9 +146,11 @@ func watch(fighter: Dictionary, delta: float) -> void:
 	_playback_cadence = lerpf(_playback_cadence, cadence, 1.0 - exp(-13.0 * delta))
 	_cast_recoil = move_toward(_cast_recoil, 0.0, 5.7 * delta)
 	if stunned and not _previous_stun:
+		_ultimate_windup_rate = 0.0
+		_ultimate_recovery = 0.0
 		player.play("stagger", 0.027)
 	elif fighter.mend_time > 0 and not stunned:
-		if current != "channel" and not current.begins_with("cast_"):
+		if current != "channel" and current != "ultimate" and not current.begins_with("cast_"):
 			player.play("channel", 0.07)
 	elif damage >= 4.0 and locomoting:
 		player.play("hit", 0.030)
@@ -163,10 +172,22 @@ func watch(fighter: Dictionary, delta: float) -> void:
 
 
 func advance_motion(delta: float) -> float:
-	player.advance(delta)
+	if _ultimate_windup_rate > 0.0:
+		# The game owns impact time. Hold the loaded pose if the renderer
+		# catches up with the simulation before the release event arrives.
+		var left := _ultimate_contact - 0.002 - player.current_animation_position
+		player.advance(clampf(delta * _ultimate_windup_rate, 0.0, maxf(left, 0.0)))
+	else:
+		_ultimate_recovery = maxf(0.0, _ultimate_recovery - delta)
+		player.advance(delta)
 	var light := 0.0
 	var clip := str(player.current_animation)
-	if clip.begins_with("cast_"):
+	if clip == "ultimate":
+		var time := player.current_animation_position
+		var gather := smoothstep(0.0, _ultimate_contact, time)
+		var fade := 1.0 - smoothstep(_ultimate_contact + 0.04, player.current_animation_length, time)
+		light = gather * fade * 1.55
+	elif clip.begins_with("cast_"):
 		var slot := int(clip.trim_prefix("cast_")) - 1
 		var contact := Animations.contact_time(champion, slot)
 		var start := Animations.visible_start(champion, slot)
@@ -210,7 +231,7 @@ func _play_locomotion() -> void:
 
 func cast(slot: int) -> float:
 	var name_of_clip := "cast_%d" % (slot + 1)
-	if not player.has_animation(name_of_clip):
+	if _ultimate_windup_rate > 0.0 or _ultimate_recovery > 0.0 or not player.has_animation(name_of_clip):
 		return 0.0
 	player.play(name_of_clip, 0.034)
 	player.speed_scale = 1.0
@@ -221,10 +242,44 @@ func cast(slot: int) -> float:
 
 
 func release_point(slot: int) -> Vector3:
+	if slot == 8:
+		return joints[UltimateMotion.release_hand(champion)].global_position
 	return joints[Animations.release_hand(champion, slot)].global_position
 
 
+func play_ultimate_windup(duration: float) -> void:
+	if duration <= 0.0 or not is_finite(duration):
+		return
+	_ultimate_windup_rate = _ultimate_contact / duration
+	_ultimate_recovery = 0.0
+	_cast_recoil = 0.0
+	player.speed_scale = 1.0
+	player.play("ultimate", 0.046)
+	player.seek(0.0, true)
+
+
+func release_ultimate() -> void:
+	_ultimate_windup_rate = 0.0
+	_ultimate_recovery = 0.28
+	player.speed_scale = 1.0
+	if player.current_animation != "ultimate":
+		player.play("ultimate", 0.034)
+	player.seek(_ultimate_contact, true)
+	_set_cast_light(1.55)
+
+
+func cancel_ultimate() -> void:
+	if _ultimate_windup_rate <= 0.0:
+		return
+	_ultimate_windup_rate = 0.0
+	_ultimate_recovery = 0.0
+	_play_locomotion()
+	_set_cast_light(0.0)
+
+
 func react(name_of_clip: String) -> void:
+	_ultimate_windup_rate = 0.0
+	_ultimate_recovery = 0.0
 	player.play(name_of_clip, 0.035)
 	player.speed_scale = 1.0
 	player.seek(0.028, true)

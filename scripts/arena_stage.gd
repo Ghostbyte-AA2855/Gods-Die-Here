@@ -41,6 +41,7 @@ const SURROUND_SHADER := preload("res://scripts/stage/surroundings.gdshader")
 const ZONE_SHADER := preload("res://scripts/stage/hazard.gdshader")
 const VEIL_SHADER := preload("res://scripts/stage/veil_curtain.gdshader")
 const ARCHITECTURE_SHADER := preload("res://scripts/stage/architecture.gdshader")
+const ObjectiveRelic := preload("res://scripts/stage/objective_relic.gd")
 enum Finish { BLOCK, METAL, TIMBER, ROUGH }
 
 var _map_id := ""
@@ -49,6 +50,7 @@ var _covers: Dictionary = {}
 var _zone_nodes: Dictionary = {}
 var _materials: Dictionary = {}
 var _architectural_materials: Dictionary = {}
+var _objective: Node3D
 
 
 func set_map(map_id: String, terrain: Array, environment_zones: Array) -> void:
@@ -75,6 +77,23 @@ func set_map(map_id: String, terrain: Array, environment_zones: Array) -> void:
 			_zone_nodes[id] = _make_zone(id, zone.kind)
 		_update_zone(_zone_nodes[id], zone)
 	_retire_absent(_zone_nodes, present_zones)
+
+
+func set_objective(state: Dictionary) -> void:
+	if state.is_empty():
+		if is_instance_valid(_objective) and _objective.visible:
+			_objective.reset()
+		return
+	var arena_id: String = state.get("map_id", _map_id)
+	if not is_instance_valid(_objective) or arena_id != _objective.arena_id:
+		if is_instance_valid(_objective):
+			_objective.hide()
+			_objective.queue_free()
+		_objective = ObjectiveRelic.new()
+		_objective.name = "ArenaObjective"
+		add_child(_objective)
+		_objective.build(arena_id)
+	_objective.set_capture(state)
 
 
 func _retire_absent(nodes: Dictionary, present: Dictionary) -> void:

@@ -161,13 +161,14 @@ func _check_bot_casts() -> void:
 	for event in game.cast_events:
 		if event.source_id > 0:
 			sources[event.source_id] = true
-			_check(MobileKits.slots(event.class_id).has(event.slot), "Bot %d only uses slots in the mobile kit" % event.source_id)
+			_check(MobileKits.slots(event.class_id).has(event.slot) or (event.get("ultimate", false) and event.slot == ArenaMatch.ArenaUltimates.SLOT),
+				"Bot %d only uses slots in the mobile kit and its ultimate" % event.source_id)
 	_check(sources.size() == 5, "Both teams' bots use their mobile kits in a live match")
 
 
 func _check_series() -> void:
 	var game = _encounter("breakwater")
-	_check(game.fighters.size() == 6 and is_equal_approx(game.round_time, 180.0), "The mobile 3v3 allows three minutes per round")
+	_check(game.fighters.size() == 6 and is_equal_approx(game.round_time, 300.0), "The mobile 3v3 allows five minutes per round")
 	var series := [0, 1, 0, 1, 0]
 	for index in series.size():
 		var winner: int = series[index]
@@ -180,7 +181,7 @@ func _check_series() -> void:
 		if index < series.size() - 1:
 			_check(game.phase == "round_over" and not game.try_mobile_ability(0), "Combat stops between rounds")
 			game.next_round()
-			_check(game.phase == "active" and is_equal_approx(game.round_time, 180.0), "A subsequent round restores the timer")
+			_check(game.phase == "active" and is_equal_approx(game.round_time, 300.0), "A subsequent round restores the timer")
 	_check(game.phase == "match_over" and game.match_winner == 0 and game.wins == [3, 2], "The third win ends the mobile series")
 	game.next_round()
 	_check(game.round_number == 5 and game.phase == "match_over", "The completed series cannot advance another round")

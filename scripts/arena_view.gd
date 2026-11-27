@@ -2,11 +2,13 @@ extends Node3D
 
 signal champion_fell(local: bool)
 signal cast_released(event: Dictionary)
+signal ultimate_started(windup: Dictionary)
 
 const ChampionModel = preload("res://scripts/champions/model.gd")
 const EliminationFx = preload("res://scripts/elimination_fx.gd")
 const ArenaStage = preload("res://scripts/arena_stage.gd")
 const CombatFx = preload("res://scripts/combat_fx.gd")
+const UltimateFx = preload("res://scripts/fx/ultimate_fx.gd")
 const GroundContact = preload("res://scripts/fx/ground_contact.gd")
 const BattleGuides = preload("res://scripts/mobile_battle_guides.gd")
 const FIELD_MARKER_SHADER = preload("res://scripts/fx/field_marker.gdshader")
@@ -56,6 +58,8 @@ var _impact := 0.0
 var _impact_axis := Vector3.ZERO
 var _stage := ArenaStage.new()
 var _fx := CombatFx.new()
+var _ultimate_fx := UltimateFx.new()
+var _charging_ultimates: Dictionary = {}
 var _ground_contact := GroundContact.new()
 var _camera: Camera3D
 var _camera_focus := Vector3.ZERO
@@ -79,6 +83,7 @@ func _ready() -> void:
 	_build_lighting()
 	add_child(_stage)
 	add_child(_fx)
+	add_child(_ultimate_fx)
 	add_child(_eliminations)
 	add_child(_ground_contact)
 	if phone_camera:
@@ -224,8 +229,11 @@ func set_stage(map_id: String, terrain: Array, zones: Array) -> void:
 
 func play_cast(event: Dictionary) -> void:
 	var source: Dictionary = _pawns.get(event.source_id, {})
+	if event.get("ultimate", false):
+		_release_ultimate(event, source)
+		return
 	var cast := {"event": event, "remaining": 0.0, "hand": Vector3.UP, "source": null}
-	if not source.is_empty() and source.node.visible:
+	if not source.is_empty() and source.node.visible and not _charging_ultimates.has(event.source_id):
 		cast.remaining = float(source.model.cast(event.slot))
 		cast.source = source.node
 		cast.hand = source.model.release_point(event.slot) - source.node.global_position
@@ -244,8 +252,56 @@ func play_cast(event: Dictionary) -> void:
 func clear_casts() -> void:
 	_pending_casts.clear()
 	_fx.clear()
+	for source_id: int in _charging_ultimates.keys():
+		_cancel_ultimate_motion(source_id)
+	_charging_ultimates.clear()
+	_ultimate_fx.clear()
+	_stage.set_objective({})
 	_ground_contact.clear()
 	_impact = 0.0
+
+
+func update_specials(objective: Dictionary, windups: Array) -> void:
+	_stage.set_objective(objective)
+	_ultimate_fx.update_windups(windups)
+	var active_sources: Dictionary = {}
+	for windup: Dictionary in windups:
+		var source_id: int = windup.source_id
+		active_sources[source_id] = true
+		if _charging_ultimates.has(source_id):
+			continue
+		_charging_ultimates[source_id] = true
+		var pawn: Dictionary = _pawns.get(source_id, {})
+		if not pawn.is_empty() and pawn.node.visible:
+			pawn.model.play_ultimate_windup(windup.remaining)
+		ultimate_started.emit(windup)
+	for source_id: int in _charging_ultimates.keys():
+		if not active_sources.has(source_id):
+			_cancel_ultimate_motion(source_id)
+			_charging_ultimates.erase(source_id)
+
+
+func _cancel_ultimate_motion(source_id: int) -> void:
+	var pawn: Dictionary = _pawns.get(source_id, {})
+	if not pawn.is_empty():
+		pawn.model.cancel_ultimate()
+
+
+func _release_ultimate(event: Dictionary, source: Dictionary) -> void:
+	_charging_ultimates.erase(event.source_id)
+	var presentation := event.duplicate()
+	if not source.is_empty() and source.node.visible:
+		source.model.release_ultimate()
+		presentation.hand_origin = source.model.release_point(8)
+	_ultimate_fx.play_impact(presentation)
+	cast_released.emit(event)
+	if event.source_id == 0 or 0 in event.affected_ids:
+		var aim: Vector2 = (event.destination as Vector2) - (event.origin as Vector2)
+		if aim.is_zero_approx():
+			aim = event.facing
+		var heading := aim.normalized()
+		_impact_axis = Vector3(heading.x, 0.0, heading.y * 0.54)
+		_impact = 0.28
 
 
 func _release_cast(cast: Dictionary) -> void:

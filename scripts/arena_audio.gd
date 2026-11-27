@@ -47,6 +47,12 @@ const CUES := {
 		"strike": 0.24, "ring": 0.12, "body": 0.81, "air": 0.15 },
 	"windup": { "length": 0.18, "pitch": 179.0, "glide": 2.24, "attack": 0.075,
 		"strike": 0.01, "ring": 0.14, "body": 0.27, "air": 0.68 },
+	"ultimate_windup": { "length": 0.88, "pitch": 91.0, "glide": 2.82, "attack": 0.49,
+		"strike": 0.12, "ring": 0.45, "body": 0.56, "air": 0.78 },
+	"ultimate_impact": { "length": 0.92, "pitch": 106.0, "glide": 0.59, "attack": 0.011,
+		"strike": 0.84, "ring": 0.52, "body": 0.75, "air": 0.36 },
+	"relic_capture": { "length": 0.60, "pitch": 332.0, "glide": 1.59, "attack": 0.018,
+		"strike": 0.17, "ring": 0.44, "body": 0.70, "air": 0.12 },
 	"incoming": { "length": 0.17, "pitch": 472.0, "glide": 0.37, "attack": 0.004,
 		"strike": 0.50, "ring": 0.19, "body": 0.57, "air": 0.36 },
 	"fall": { "length": 0.55, "pitch": 116.0, "glide": 0.56, "attack": 0.010,
@@ -64,7 +70,7 @@ const CUES := {
 	"veil": { "length": 0.60, "pitch": 245.0, "glide": 0.83, "attack": 0.040,
 		"strike": 0.16, "ring": 0.30, "body": 0.57, "air": 0.15 },
 }
-enum Priority { BACKGROUND, WINDUP, NEARBY, INCOMING, PLAYER, WARNING, ELIMINATION }
+enum Priority { BACKGROUND, WINDUP, NEARBY, INCOMING, PLAYER, WARNING, ELIMINATION, ULTIMATE, PLAYER_ULTIMATE }
 
 var muted := false
 var _voices: Array[AudioStreamPlayer] = []
@@ -76,6 +82,7 @@ var _last_background := -BACKGROUND_GAP_MS
 var _last_incoming := -INCOMING_GAP_MS
 var _map := ""
 var _phases: Dictionary = {}
+var _objective_phase := ""
 
 
 func _ready() -> void:
@@ -119,6 +126,9 @@ func windup(event: Dictionary) -> void:
 func cast(event: Dictionary) -> void:
 	if muted:
 		return
+	if event.get("ultimate", false):
+		_ultimate_impact(event)
+		return
 	var slot := int(event.get("slot", -1))
 	var class_id := str(event.get("class_id", ""))
 	var style: Array = CombatFx.STYLES.get(class_id, [])
@@ -150,6 +160,29 @@ func cast(event: Dictionary) -> void:
 	if affected.is_empty() and cue in ["edge", "bolt", "crush", "chain"]:
 		volume -= 3.0
 	_play(cue, volume, pitch, priority)
+
+
+func ultimate_windup(event: Dictionary) -> void:
+	var local: bool = event.source_id == 0
+	var tempo := 0.88 / maxf(0.45, float(event.get("duration", 0.88)))
+	_play("ultimate_windup", -12.5 if local else -17.0, tempo * _class_pitch(event), Priority.PLAYER_ULTIMATE if local else Priority.ULTIMATE)
+
+
+func _ultimate_impact(event: Dictionary) -> void:
+	var local: bool = event.source_id == 0
+	var nearby: bool = 0 in event.get("affected_ids", [])
+	var style: Array = CombatFx.STYLES.get(event.class_id, [])
+	var overtone: String = PATTERN_CUES.get(style[2][7], "burst") if not style.is_empty() else "burst"
+	var priority := Priority.PLAYER_ULTIMATE if local else Priority.ULTIMATE
+	_play("ultimate_impact", -8.5 if local else -13.0 if nearby else -16.0, _class_pitch(event) * 0.87, priority)
+	_play(overtone, -16.0 if local else -22.0, _class_pitch(event) * 1.04, priority)
+
+
+func objective(state: Dictionary, active: bool) -> void:
+	var new_phase: String = state.get("phase", "") if active else ""
+	if new_phase == "cooldown" and _objective_phase in ["open", "contested"]:
+		_play("relic_capture", -15.5, 1.08 if state.get("team", -1) == 0 else 0.89, Priority.WARNING)
+	_objective_phase = new_phase
 
 
 func _is_major(event: Dictionary) -> bool:

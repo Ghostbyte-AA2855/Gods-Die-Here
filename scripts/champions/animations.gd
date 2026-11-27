@@ -1,6 +1,7 @@
 extends RefCounted
 
 const AbilityMotion = preload("res://scripts/champions/ability_motion.gd")
+const UltimateMotion = preload("res://scripts/champions/ultimate_motion.gd")
 const STRIDES := {
 	"breakwater":[0.78, 0.72, 0.14], "threadkeeper":[0.58, 0.48, -0.12],
 	"echo_duelist":[0.47, 1.18, 0.31], "forgecaller":[0.78, 0.66, 0.20],
@@ -78,7 +79,26 @@ static func _build_library(class_id: String, archetype: String, model: Node3D) -
 			_plant_cast(pose, model)
 			poses.append(pose)
 		result.add_animation("cast_%d" % (slot + 1), _clip(model, record[1], times, poses, false))
+	result.add_animation("ultimate", _ultimate_clip(model, class_id, ready))
 	return result
+
+
+static func _ultimate_clip(model: Node3D, class_id: String, ready: Dictionary) -> Animation:
+	var record: Array = UltimateMotion.CLIPS[class_id]
+	var beats: Vector3 = record[1]
+	var times := _times(42)
+	times.append_array(PackedFloat32Array([beats.x, beats.y, beats.z]))
+	times.sort()
+	var poses: Array[Dictionary] = []
+	for at in times:
+		var pose := UltimateMotion.sample(class_id, at)
+		_mix_ready(pose, ready, 1.0 - smoothstep(0.0, beats.x, at) + smoothstep(beats.z, 1.0, at))
+		if class_id == "breakwater":
+			var outward := smoothstep(beats.x, beats.y, at) * (1.0 - smoothstep(beats.y, beats.z, at))
+			_align_vault_shield(pose, lerpf(0.24, -0.10, outward), 0.94)
+		_plant_cast(pose, model)
+		poses.append(pose)
+	return _clip(model, record[0], times, poses, false)
 
 
 static func visible_start(class_id: String, slot: int) -> float:
